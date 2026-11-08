@@ -1,14 +1,17 @@
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
 import { NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
-import { updateAthleteProfile } from "@/lib/store";
+import { saveSyncedData } from "@/lib/store";
 
 export async function POST() {
   const token = process.env.GARMIN_TOKEN;
   if (!token) {
     return NextResponse.json({
       success: false,
-      message: "Kein GARMIN_TOKEN in Umgebungsvariablen gefunden. Die App nutzt aktuelle lokale Mock- und Fallback-Daten.",
+      message: "Kein GARMIN_TOKEN in .env.local gefunden.",
       isMock: true,
       syncedAt: new Date().toISOString(),
     });
@@ -56,13 +59,21 @@ export async function POST() {
         });
       }
 
-      // Update sync time
-      await updateAthleteProfile({ lastSyncAt: new Date().toISOString() });
+      // Persist metrics, activities and athlete stats
+      await saveSyncedData({
+        athleteStats: parsed.athlete_stats,
+        metrics: parsed.metrics,
+        activities: parsed.activities,
+      });
 
       return NextResponse.json({
         success: true,
-        message: `Garmin Sync erfolgreich: ${parsed.metrics_count || 0} Metriken und ${parsed.activities_count || 0} Aktivitäten synchronisiert.`,
-        data: parsed,
+        message: `Garmin Sync erfolgreich: ${parsed.metrics_count || 0} Tage Metriken und ${parsed.activities_count || 0} Aktivitäten synchronisiert.`,
+        data: {
+          metrics_count: parsed.metrics_count,
+          activities_count: parsed.activities_count,
+          athlete_stats: parsed.athlete_stats,
+        },
       });
     } catch {
       return NextResponse.json({

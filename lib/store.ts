@@ -354,3 +354,130 @@ export async function clearDayWorkout(date: string, slotIndex = 1) {
 
   return { success: true, date, slotIndex };
 }
+
+export async function saveSyncedData(params: {
+  athleteStats?: { resting_hr?: number | null; max_hr?: number | null; weight_kg?: number | null };
+  metrics?: any[];
+  activities?: any[];
+}) {
+  const { athleteStats, metrics = [], activities: acts = [] } = params;
+
+  if (athleteStats) {
+    if (athleteStats.resting_hr) globalStore.profile.restingHr = athleteStats.resting_hr;
+    if (athleteStats.max_hr) globalStore.profile.maxHr = athleteStats.max_hr;
+    if (athleteStats.weight_kg) globalStore.profile.weightKg = athleteStats.weight_kg;
+  }
+  globalStore.profile.lastSyncAt = new Date().toISOString();
+
+  if (metrics.length > 0) {
+    for (const m of metrics) {
+      const idx = globalStore.metrics.findIndex((existing) => existing.date === m.date);
+      const metricObj: MockDailyMetric = {
+        date: m.date,
+        restingHr: m.resting_hr ?? 48,
+        hrvLastNight: m.hrv_last_night ?? 65,
+        hrv7dAvg: m.hrv_7d_avg ?? 65,
+        hrvStatus: m.hrv_status || "balanced",
+        sleepScore: m.sleep_score ?? 80,
+        sleepDurationSec: m.sleep_duration_sec ?? 28800,
+        remSleepSec: m.rem_sleep_sec ?? 5000,
+        deepSleepSec: m.deep_sleep_sec ?? 6000,
+        bodyBatteryMax: m.body_battery_max ?? 90,
+        bodyBatteryMin: m.body_battery_min ?? 25,
+        stressAvg: m.stress_avg ?? 25,
+        trainingReadiness: m.training_readiness ?? 80,
+        acuteLoad: m.acute_load ?? 700,
+      };
+      if (idx >= 0) {
+        globalStore.metrics[idx] = metricObj;
+      } else {
+        globalStore.metrics.push(metricObj);
+      }
+
+      if (db) {
+        try {
+          await db
+            .insert(dailyMetrics)
+            .values(metricObj)
+            .onConflictDoUpdate({
+              target: dailyMetrics.date,
+              set: metricObj,
+            });
+        } catch (e) {
+          // DB table might not be initialized yet
+        }
+      }
+    }
+    // Sort metrics by date ascending
+    globalStore.metrics.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  if (acts.length > 0) {
+    for (const act of acts) {
+      const idx = globalStore.activities.findIndex((existing) => existing.activityId === act.activity_id);
+      const actObj: MockActivity = {
+        activityId: act.activity_id,
+        name: act.name,
+        sportType: act.sport_type,
+        isCommute: act.is_commute,
+        startTime: act.start_time,
+        durationSec: act.duration_sec,
+        distanceM: act.distance_m ?? 0,
+        avgHr: act.avg_hr ?? 0,
+        maxHr: act.max_hr ?? 0,
+        avgPowerW: act.avg_power_w,
+        normalizedPowerW: act.normalized_power_w,
+        avgCadence: act.avg_cadence,
+        avgPaceSecPerKm: act.avg_pace_sec_per_km,
+        tss: act.tss ?? 0,
+        intensityFactor: act.intensity_factor ?? 0,
+        avgSpeedMps: act.avg_speed_mps ?? 0,
+        elevationGainM: act.elevation_gain_m ?? 0,
+        poolLengthM: act.pool_length_m,
+        swolf: act.swolf,
+        calories: act.calories ?? 0,
+        linkedGymTemplateId: act.linked_gym_template_id ?? null,
+      };
+      if (idx >= 0) {
+        globalStore.activities[idx] = actObj;
+      } else {
+        globalStore.activities.unshift(actObj);
+      }
+
+      if (db) {
+        try {
+          await db
+            .insert(activities)
+            .values({
+              activityId: BigInt(actObj.activityId),
+              name: actObj.name,
+              sportType: actObj.sportType,
+              isCommute: actObj.isCommute,
+              startTime: new Date(actObj.startTime),
+              durationSec: actObj.durationSec,
+              distanceM: actObj.distanceM,
+              avgHr: actObj.avgHr,
+              maxHr: actObj.maxHr,
+              avgPowerW: actObj.avgPowerW,
+              normalizedPowerW: actObj.normalizedPowerW,
+              avgCadence: actObj.avgCadence,
+              avgPaceSecPerKm: actObj.avgPaceSecPerKm,
+              tss: actObj.tss,
+              intensityFactor: actObj.intensityFactor,
+              avgSpeedMps: actObj.avgSpeedMps,
+              elevationGainM: actObj.elevationGainM,
+              poolLengthM: actObj.poolLengthM,
+              swolf: actObj.swolf,
+              calories: actObj.calories,
+              linkedGymTemplateId: actObj.linkedGymTemplateId,
+            })
+            .onConflictDoNothing();
+        } catch (e) {
+          // DB table fallback
+        }
+      }
+    }
+  }
+
+  return { success: true };
+}
