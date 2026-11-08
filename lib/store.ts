@@ -39,12 +39,12 @@ export async function getAthleteProfile(): Promise<MockAthleteProfile> {
         const r = rows[0];
         return {
           id: r.id,
-          currentFtpW: r.currentFtpW ?? 250,
+          currentFtpW: r.currentFtpW ?? null,
           maxHr: r.maxHr ?? 190,
           restingHr: r.restingHr ?? 48,
-          lthr: r.lthr ?? 172,
-          swimCssPaceSec: r.swimCssPaceSec ?? 95,
-          runThresholdPaceSec: r.runThresholdPaceSec ?? 255,
+          lthr: r.lthr ?? null,
+          swimCssPaceSec: r.swimCssPaceSec ?? null,
+          runThresholdPaceSec: r.runThresholdPaceSec ?? null,
           weightKg: r.weightKg ?? 72,
           setupCompleted: r.setupCompleted ?? false,
           coachMemoryJson: r.coachMemoryJson,

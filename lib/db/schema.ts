@@ -14,12 +14,12 @@ import {
 // 1. Athlete Profile
 export const athleteProfile = pgTable("athlete_profile", {
   id: serial("id").primaryKey(),
-  currentFtpW: integer("current_ftp_w").default(250),
+  currentFtpW: integer("current_ftp_w"),
   maxHr: integer("max_hr").default(190),
   restingHr: integer("resting_hr").default(48),
-  lthr: integer("lthr").default(172),
-  swimCssPaceSec: integer("swim_css_pace_sec").default(95), // sec per 100m
-  runThresholdPaceSec: integer("run_threshold_pace_sec").default(255), // sec per km (e.g. 4:15 min/km)
+  lthr: integer("lthr"),
+  swimCssPaceSec: integer("swim_css_pace_sec"), // sec per 100m
+  runThresholdPaceSec: integer("run_threshold_pace_sec"), // sec per km (e.g. 4:15 min/km)
   weightKg: real("weight_kg").default(72.5),
   setupCompleted: boolean("setup_completed").default(false).notNull(),
   coachMemoryJson: jsonb("coach_memory_json"), // Goals, schedule, strengths/weaknesses, injuries, setup notes

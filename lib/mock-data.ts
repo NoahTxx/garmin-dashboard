@@ -21,12 +21,12 @@ export interface MockGymTemplate {
 
 export interface MockAthleteProfile {
   id: number;
-  currentFtpW: number;
+  currentFtpW: number | null;
   maxHr: number;
   restingHr: number;
-  lthr: number;
-  swimCssPaceSec: number;
-  runThresholdPaceSec: number;
+  lthr: number | null;
+  swimCssPaceSec: number | null;
+  runThresholdPaceSec: number | null;
   weightKg: number;
   setupCompleted: boolean;
   coachMemoryJson?: any;
@@ -104,12 +104,12 @@ export function getRelativeDate(daysOffset: number): string {
 
 export const initialProfile: MockAthleteProfile = {
   id: 1,
-  currentFtpW: 285,
+  currentFtpW: null,
   maxHr: 192,
   restingHr: 46,
-  lthr: 174,
-  swimCssPaceSec: 88, // 1:28 / 100m
-  runThresholdPaceSec: 250, // 4:10 min/km
+  lthr: null,
+  swimCssPaceSec: null,
+  runThresholdPaceSec: null,
   weightKg: 71.4,
   setupCompleted: false,
   coachMemoryJson: null,
@@ -120,53 +120,7 @@ export const initialProfile: MockAthleteProfile = {
   lastSyncAt: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),
 };
 
-export const initialGymTemplates: MockGymTemplate[] = [
-  {
-    id: 1,
-    code: "A",
-    name: "Plan A: Unterkörper Primär (Squat & Knie-Dominanz)",
-    focusMuscles: "Quadrizeps, Gluteus, Core, Waden",
-    estimatedCnsFatigue: 8,
-    active: true,
-    exercisesJson: [
-      { name: "Safety Bar Squat", muscleGroup: "Quadrizeps / Gluteus", sets: 3, reps: "6-8", rir: 2, restSec: 180, weightKg: "90 kg", note: "3s kontrollierte Exzentrik, kein Lockout der Knie oben" },
-      { name: "Romanian Deadlift (Kurzhanteln)", muscleGroup: "Hamstrings / Glutes", sets: 3, reps: "8-10", rir: 2, restSec: 120, weightKg: "2x 30 kg", note: "Maximale Dehnung, neutraler Rücken" },
-      { name: "Bulgarian Split Squat", muscleGroup: "Quads / Stabilisatoren", sets: 2, reps: "10-12", rir: 1, restSec: 90, weightKg: "2x 18 kg", note: "Unilateraler Beinausgleich" },
-      { name: "Stehendes Wadenheben", muscleGroup: "Gastrocnemius", sets: 3, reps: "12-15", rir: 1, restSec: 60, weightKg: "65 kg", note: "2 Sek Dehnung in der unteren Position" },
-      { name: "Hanging Leg Raises", muscleGroup: "Rectus Abdominis", sets: 3, reps: "10-12", rir: 2, restSec: 60, weightKg: "BW", note: "Becken kippen, Schultern fixiert" },
-    ],
-  },
-  {
-    id: 2,
-    code: "B",
-    name: "Plan B: Oberkörper (Zug, Schultergesundheit & Schwimm-Power)",
-    focusMuscles: "Lats, Schultern, Brust, Scapula",
-    estimatedCnsFatigue: 5,
-    active: true,
-    exercisesJson: [
-      { name: "Klimmzüge (neutraler Griff)", muscleGroup: "Latissimus / Biceps", sets: 4, reps: "6-8", rir: 2, restSec: 150, weightKg: "+10 kg", note: "Explosiv hoch, Fokus auf Schwimm-Zugphase" },
-      { name: "Schrägbankdrücken (Kurzhanteln 30°)", muscleGroup: "Brust / Vordere Schulter", sets: 3, reps: "8-10", rir: 2, restSec: 120, weightKg: "2x 28 kg", note: "Ellenbogen ca. 45° zum Torso" },
-      { name: "Kabelrudern sitzend (breiter Griff)", muscleGroup: "Rhomboids / Trapezius", sets: 3, reps: "10-12", rir: 2, restSec: 90, weightKg: "55 kg", note: "Volle Scapula-Retraktion am Peak" },
-      { name: "Seitheben am Kabelzug", muscleGroup: "Laterale Deltamuskulatur", sets: 3, reps: "12-15", rir: 1, restSec: 60, weightKg: "7.5 kg", note: "Konstanter Kabelzug" },
-      { name: "Face Pulls mit Außenrotation", muscleGroup: "Rotatorenmanschette", sets: 3, reps: "15-20", rir: 2, restSec: 60, weightKg: "20 kg", note: "Verletzungsprophylaxe für Rad & Kraulschwimmen" },
-    ],
-  },
-  {
-    id: 3,
-    code: "C",
-    name: "Plan C: Posterior Chain & Hüft-Extension (Hintere Kette)",
-    focusMuscles: "Hamstrings, Gluteus, Rückenstrecker, Rumpf-Anti-Rotation",
-    estimatedCnsFatigue: 7,
-    active: true,
-    exercisesJson: [
-      { name: "Trap Bar Deadlift (High Handle)", muscleGroup: "Gesamte Kette", sets: 3, reps: "5", rir: 2, restSec: 180, weightKg: "120 kg", note: "Volle Körperspannung, neutraler Nacken" },
-      { name: "Barbell Hip Thrust", muscleGroup: "Gluteus Maximus", sets: 3, reps: "8-10", rir: 1, restSec: 120, weightKg: "110 kg", note: "1 Sekunde Peak-Kontraktion oben" },
-      { name: "Einarmiges Latzug-Kabel", muscleGroup: "Latissimus", sets: 3, reps: "10-12", rir: 2, restSec: 90, weightKg: "35 kg", note: "Gezielter Ellbogenzug zur Hüfte" },
-      { name: "Pallof Press", muscleGroup: "Anti-Rotation Core", sets: 3, reps: "12 / Seite", rir: 2, restSec: 60, weightKg: "15 kg", note: "Stabilität gegen Torsion im Sattel" },
-      { name: "Back Hyperextensions 45°", muscleGroup: "Erector Spinae / Hamstrings", sets: 3, reps: "12-15", rir: 2, restSec: 60, weightKg: "+15 kg", note: "Wirbelsäule bleibt gerade, Bewegung rein aus der Hüfte" },
-    ],
-  },
-];
+export const initialGymTemplates: MockGymTemplate[] = [];
 
 // Full 14-day metrics series for real Recharts rendering
 export const initialDailyMetrics: MockDailyMetric[] = [
@@ -365,108 +319,4 @@ export const sampleZwoXml = `<?xml version="1.0" encoding="UTF-8"?>
   </workout>
 </workout_file>`;
 
-export const initialPlannedWorkouts: MockPlannedWorkout[] = [
-  {
-    id: 101,
-    date: getRelativeDate(0),
-    slotIndex: 1,
-    sportType: "zwift",
-    title: "Polarized VO2max 4x4min",
-    durationMin: 65,
-    targetTss: 78,
-    gymTemplateCode: null,
-    description: "4x 4min bei 115% FTP (328W) mit je 4min Pause. Hohe Sauerstoffaufnahme bei optimaler Readiness (89).",
-    structuredStepsJson: [
-      { durationSec: 600, targetFtpPct: 65, cadence: 90, label: "Warmup" },
-      { durationSec: 240, targetFtpPct: 115, cadence: 96, label: "Intervall 1 @ 328W" },
-      { durationSec: 240, targetFtpPct: 50, cadence: 85, label: "Pause" },
-      { durationSec: 240, targetFtpPct: 115, cadence: 96, label: "Intervall 2 @ 328W" },
-      { durationSec: 240, targetFtpPct: 50, cadence: 85, label: "Pause" },
-      { durationSec: 240, targetFtpPct: 115, cadence: 96, label: "Intervall 3 @ 328W" },
-      { durationSec: 240, targetFtpPct: 50, cadence: 85, label: "Pause" },
-      { durationSec: 240, targetFtpPct: 115, cadence: 96, label: "Intervall 4 @ 328W" },
-      { durationSec: 600, targetFtpPct: 50, cadence: 85, label: "Cooldown" },
-    ],
-    zwoXml: sampleZwoXml,
-    syncedToZwift: true,
-    status: "planned",
-  },
-  {
-    id: 102,
-    date: getRelativeDate(1),
-    slotIndex: 1,
-    sportType: "gym",
-    title: "Gym Plan B (Oberkörper & Lats)",
-    durationMin: 60,
-    targetTss: 40,
-    gymTemplateCode: "B",
-    description: "Fokus auf Zugmuskulatur & Rotatorenmanschette. Beine schonen für die Ausdauerblöcke.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-  {
-    id: 103,
-    date: getRelativeDate(2),
-    slotIndex: 1,
-    sportType: "running",
-    title: "Z2 Grundlagenausdauer Lauf 12km",
-    durationMin: 65,
-    targetTss: 58,
-    gymTemplateCode: null,
-    description: "Lockeres Aerobes Laufen bei 5:05 - 5:20 min/km mit Fokus auf 175+ spm Schrittfrequenz.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-  {
-    id: 104,
-    date: getRelativeDate(3),
-    slotIndex: 1,
-    sportType: "swimming",
-    title: "CSS Ausdauer 2600m",
-    durationMin: 50,
-    targetTss: 45,
-    gymTemplateCode: null,
-    description: "Hauptblock: 6x 300m @ CSS + 3s mit Pullbuoy.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-  {
-    id: 105,
-    date: getRelativeDate(4),
-    slotIndex: 1,
-    sportType: "rest",
-    title: "Aktiver Ruhetag / Mobility",
-    durationMin: 20,
-    targetTss: 0,
-    gymTemplateCode: null,
-    description: "Spaziergang und Foam Rolling zur Beinerholung.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-  {
-    id: 106,
-    date: getRelativeDate(5),
-    slotIndex: 1,
-    sportType: "road_cycling",
-    title: "Zone 2 Ausfahrt 3h (195W)",
-    durationMin: 180,
-    targetTss: 135,
-    gymTemplateCode: null,
-    description: "Aerobe Fettstoffwechselbasis bei 65-72% FTP.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-  {
-    id: 107,
-    date: getRelativeDate(6),
-    slotIndex: 1,
-    sportType: "gym",
-    title: "Gym Plan A (Squat & Leg Drive)",
-    durationMin: 65,
-    targetTss: 50,
-    gymTemplateCode: "A",
-    description: "Schwere Safety Bar Kniebeugen mit RIR 2, danach RDLs.",
-    syncedToZwift: false,
-    status: "planned",
-  },
-];
+export const initialPlannedWorkouts: MockPlannedWorkout[] = [];
