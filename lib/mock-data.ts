@@ -28,6 +28,10 @@ export interface MockAthleteProfile {
   swimCssPaceSec: number;
   runThresholdPaceSec: number;
   weightKg: number;
+  setupCompleted: boolean;
+  coachMemoryJson?: any;
+  locationLat: number;
+  locationLon: number;
   intervalsIcuId: string | null;
   intervalsIcuApiKey: string | null;
   lastSyncAt: string;
@@ -106,6 +110,10 @@ export const initialProfile: MockAthleteProfile = {
   swimCssPaceSec: 88, // 1:28 / 100m
   runThresholdPaceSec: 250, // 4:10 min/km
   weightKg: 71.4,
+  setupCompleted: false,
+  coachMemoryJson: null,
+  locationLat: 52.56,
+  locationLon: 13.09,
   intervalsIcuId: process.env.INTERVALS_ATHLETE_ID || null,
   intervalsIcuApiKey: process.env.INTERVALS_API_KEY ? "***" : null,
   lastSyncAt: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),

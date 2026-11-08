@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Activity as ActivityIcon,
   Zap,
@@ -25,7 +25,18 @@ import {
   Trash2,
   Clock,
   Flame,
-  TrendingUp,
+  CloudSun,
+  Wind,
+  Droplets,
+  ChevronRight,
+  Paperclip,
+  Image as ImageIcon,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  PieChart,
+  ShieldCheck,
+  Check,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -37,7 +48,6 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend,
   ReferenceLine,
 } from "recharts";
 import {
@@ -49,8 +59,29 @@ import {
   MockExercise,
 } from "@/lib/mock-data";
 
+interface WeatherData {
+  current: {
+    temp: number;
+    apparentTemp: number;
+    humidity: number;
+    windKmH: number;
+    rain: number;
+    weatherCode: number;
+    precipProb: number;
+    outdoorIndex: "green" | "yellow" | "red";
+    outdoorText: string;
+  };
+  forecast6h: Array<{
+    time: string;
+    temp: number;
+    precipProb: number;
+    windKmH: number;
+    weatherCode: number;
+  }>;
+}
+
 export function DashboardApp() {
-  const [activeTab, setActiveTab] = useState<"today" | "planner" | "chat" | "gym">("today");
+  const [activeTab, setActiveTab] = useState<"briefing" | "analytics" | "chat" | "planner" | "gym">("briefing");
   const [hideCommutes, setHideCommutes] = useState(true);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -63,33 +94,56 @@ export function DashboardApp() {
   const [plannedWorkouts, setPlannedWorkouts] = useState<MockPlannedWorkout[]>([]);
   const [todayStr, setTodayStr] = useState("2026-11-08");
 
-  // Gym Editor Modal
+  // Weather state
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+
+  // Modals & Inspections
+  const [selectedActivity, setSelectedActivity] = useState<MockActivity | null>(null);
   const [editingPlan, setEditingPlan] = useState<MockGymTemplate | null>(null);
 
-  // Chat State
-  const [messages, setMessages] = useState<Array<{ id: string; role: "user" | "assistant"; content: string }>>([
+  // Chat & Image Upload State
+  const [messages, setMessages] = useState<
+    Array<{
+      id: string;
+      role: "user" | "assistant";
+      content: string;
+      images?: string[];
+    }>
+  >([
     {
       id: "m0",
       role: "assistant",
       content:
-        "Willkommen im Performance & AI Coach System.\n\nIch sehe deine aktuellen Garmin-Metriken (HRV 73ms, Schlaf 88, Readiness 89), plane aber bewusst noch keine Einheiten ohne dein Briefing.\n\nBeantworte mir kurz:\n1. Was ist dein primäres Ziel (FTP-Steigerung, Halbmarathon, Triathlon oder Hypertrophie)?\n2. Wie viele Wochenstunden Trainingszeit hast du zur Verfügung?\n3. An welchen Tagen möchtest du deine 2 Gym-Einheiten einbauen?\n\nSobald du bereit bist, sag einfach 'Plane meine Woche' oder 'Erstelle mir jetzt eine Einheit'.",
+        "Willkommen im Performance & AI Coach System.\n\nSetup-Status: Bitte lade deine 3 Gym-Pläne als Screenshot/Foto hoch (Büroklammer-Icon) oder nenne mir deine Ziel- und Eckdaten. Ich lese Übungen und RIR per Vision aus und konfiguriere dein Profil.",
     },
   ]);
   const [inputMessage, setInputMessage] = useState("");
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [isAiReplying, setIsAiReplying] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setTodayStr(new Date().toISOString().split("T")[0]);
-      const res = await fetch("/api/dashboard");
-      if (res.ok) {
-        const data = await res.json();
+
+      const [dashRes, weatherRes] = await Promise.all([
+        fetch("/api/dashboard"),
+        fetch("/api/weather?lat=52.56&lon=13.09"),
+      ]);
+
+      if (dashRes.ok) {
+        const data = await dashRes.json();
         setProfile(data.profile);
         setMetrics(data.metrics || []);
         setActivities(data.activities || []);
         setGymTemplates(data.gymTemplates || []);
         setPlannedWorkouts(data.plannedWorkouts || []);
+      }
+
+      if (weatherRes.ok) {
+        const wData = await weatherRes.json();
+        setWeather(wData);
       }
     } catch (e) {
       console.error("Dashboard fetch error:", e);
@@ -120,14 +174,32 @@ export function DashboardApp() {
 
   const handleAssignGym = async (activityId: string, templateId: number) => {
     try {
-      await fetch("/api/dashboard", {
+      await fetch("/api/gym", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "link_gym",
+          action: "link_activity",
           payload: { activityId, templateId },
         }),
       });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveGymPlan = async () => {
+    if (!editingPlan) return;
+    try {
+      await fetch("/api/gym", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_template",
+          payload: editingPlan,
+        }),
+      });
+      setEditingPlan(null);
       loadData();
     } catch (e) {
       console.error(e);
@@ -147,44 +219,78 @@ export function DashboardApp() {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveGymPlan = async () => {
-    if (!editingPlan) return;
-    try {
-      await fetch("/api/dashboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_gym_template",
-          payload: editingPlan,
-        }),
-      });
-      setEditingPlan(null);
-      loadData();
-    } catch (e) {
-      console.error(e);
+  // Image Upload Handlers
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const remainingSlots = 4 - attachedImages.length;
+    const selected = Array.from(files).slice(0, remainingSlots);
+
+    selected.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setAttachedImages((prev) => [...prev.slice(0, 3), event.target!.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1 && attachedImages.length < 4) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              setAttachedImages((prev) => [...prev, event.target!.result as string]);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
     }
   };
 
+  // Chat message submission
   const handleSendMessage = async (customText?: string) => {
     const textToSend = customText || inputMessage;
-    if (!textToSend.trim() || isAiReplying) return;
+    if ((!textToSend.trim() && attachedImages.length === 0) || isAiReplying) return;
 
     const userMsg = {
       id: `u-${Date.now()}`,
       role: "user" as const,
-      content: textToSend,
+      content: textToSend || "Analysiere diese Gym-Plan Screenshots:",
+      images: attachedImages.length > 0 ? [...attachedImages] : undefined,
     };
 
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
     setInputMessage("");
+    const sentImages = [...attachedImages];
+    setAttachedImages([]);
     setIsAiReplying(true);
 
     try {
+      // Build Vercel AI SDK content payload (supports text + image parts)
+      const payloadMessages = newHistory.map((m) => {
+        if (m.images && m.images.length > 0) {
+          const contentParts: any[] = [{ type: "text", text: m.content }];
+          m.images.forEach((img) => {
+            contentParts.push({ type: "image", image: img });
+          });
+          return { role: m.role, content: contentParts };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory.map((m) => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ messages: payloadMessages }),
       });
 
       if (res.ok) {
@@ -213,72 +319,137 @@ export function DashboardApp() {
     }
   };
 
-  // 14-Day HRV & Readiness Chart Data
-  const hrvChartData = useMemo(() => {
-    return metrics.map((m) => {
-      const parts = m.date.split("-");
-      const shortDate = `${parts[2]}.${parts[1]}`;
-      return {
-        date: shortDate,
-        fullDate: m.date,
-        hrvNight: m.hrvLastNight,
-        hrvAvg: m.hrv7dAvg,
-        readiness: m.trainingReadiness,
-        balancedMin: 62,
-        balancedMax: 74,
-      };
-    });
-  }, [metrics]);
-
-  // 14-Day Training Load Stacked Bar Data
-  const loadChartData = useMemo(() => {
-    const mapByDate: Record<string, { cycling: number; running: number; swimming: number; gym: number; commute: number }> = {};
-
-    metrics.forEach((m) => {
-      mapByDate[m.date] = { cycling: 0, running: 0, swimming: 0, gym: 0, commute: 0 };
-    });
-
-    activities.forEach((act) => {
-      const d = act.startTime.split("T")[0];
-      if (!mapByDate[d]) {
-        mapByDate[d] = { cycling: 0, running: 0, swimming: 0, gym: 0, commute: 0 };
-      }
-      const val = act.tss || Math.round(act.durationSec / 60);
-
-      if (act.isCommute) {
-        mapByDate[d].commute += val;
-      } else if (act.sportType === "running") {
-        mapByDate[d].running += val;
-      } else if (act.sportType === "swimming") {
-        mapByDate[d].swimming += val;
-      } else if (act.sportType === "gym") {
-        mapByDate[d].gym += val;
-      } else {
-        mapByDate[d].cycling += val;
-      }
-    });
-
-    return metrics.map((m) => {
-      const parts = m.date.split("-");
-      const shortDate = `${parts[2]}.${parts[1]}`;
-      const loads = mapByDate[m.date] || { cycling: 0, running: 0, swimming: 0, gym: 0, commute: 0 };
-      return {
-        date: shortDate,
-        fullDate: m.date,
-        Rad: loads.cycling,
-        Lauf: loads.running,
-        Schwimm: loads.swimming,
-        Gym: loads.gym,
-        Pendeln: loads.commute,
-      };
-    });
-  }, [metrics, activities]);
-
   const latestMetric = metrics[metrics.length - 1] || null;
   const todayWorkout = plannedWorkouts.find((w) => w.date === todayStr);
   const filteredActivities = activities.filter((a) => !hideCommutes || !a.isCommute);
 
-  // Format pace helper (sec/km to min:sec /km)
+  // Sleep breakdown percentages
+  const sleepDuration = latestMetric?.sleepDurationSec || 28800;
+  const deepSleep = latestMetric?.deepSleepSec || 7100;
+  const remSleep = latestMetric?.remSleepSec || 6200;
+  const lightSleep = Math.max(0, sleepDuration - deepSleep - remSleep);
+
+  const deepPct = Math.round((deepSleep / sleepDuration) * 100);
+  const remPct = Math.round((remSleep / sleepDuration) * 100);
+  const lightPct = Math.round((lightSleep / sleepDuration) * 100);
+
+  // 14-Day Charts Data
+  const hrvChartData = useMemo(() => {
+    return metrics.map((m) => {
+      const parts = m.date.split("-");
+      return {
+        date: `${parts[2]}.${parts[1]}`,
+        hrvNight: m.hrvLastNight,
+        hrvAvg: m.hrv7dAvg,
+        readiness: m.trainingReadiness,
+      };
+    });
+  }, [metrics]);
+
+  const loadChartData = useMemo(() => {
+    const mapByDate: Record<string, { Rad: number; Lauf: number; Schwimm: number; Gym: number }> = {};
+    metrics.forEach((m) => {
+      mapByDate[m.date] = { Rad: 0, Lauf: 0, Schwimm: 0, Gym: 0 };
+    });
+    activities.forEach((act) => {
+      const d = act.startTime.split("T")[0];
+      if (!mapByDate[d]) mapByDate[d] = { Rad: 0, Lauf: 0, Schwimm: 0, Gym: 0 };
+      const val = act.tss || Math.round(act.durationSec / 60);
+      if (act.isCommute) return;
+      if (act.sportType === "running") mapByDate[d].Lauf += val;
+      else if (act.sportType === "swimming") mapByDate[d].Schwimm += val;
+      else if (act.sportType === "gym") mapByDate[d].Gym += val;
+      else mapByDate[d].Rad += val;
+    });
+
+    return metrics.map((m) => {
+      const parts = m.date.split("-");
+      const loads = mapByDate[m.date] || { Rad: 0, Lauf: 0, Schwimm: 0, Gym: 0 };
+      return {
+        date: `${parts[2]}.${parts[1]}`,
+        Rad: loads.Rad,
+        Lauf: loads.Lauf,
+        Schwimm: loads.Schwimm,
+        Gym: loads.Gym,
+      };
+    });
+  }, [metrics, activities]);
+
+  // 7-Day Sleep Consistency Chart Data
+  const sleepChartData = useMemo(() => {
+    return metrics.slice(-7).map((m) => {
+      const parts = m.date.split("-");
+      return {
+        date: `${parts[2]}.${parts[1]}`,
+        hoursTotal: parseFloat(((m.sleepDurationSec || 28800) / 3600).toFixed(1)),
+        deepHours: parseFloat(((m.deepSleepSec || 6000) / 3600).toFixed(1)),
+        remHours: parseFloat(((m.remSleepSec || 5000) / 3600).toFixed(1)),
+        score: m.sleepScore || 80,
+      };
+    });
+  }, [metrics]);
+
+  // Weekly Discipline Totals (excluding commutes)
+  const weeklyTotals = useMemo(() => {
+    let bikeKm = 0, bikeSec = 0, bikeEle = 0, bikeWattsSum = 0, bikeWattCount = 0;
+    let runKm = 0, runSec = 0, runPaceSum = 0, runPaceCount = 0;
+    let swimM = 0, swimSec = 0, swimSwolfSum = 0, swimSwolfCount = 0;
+    let gymCount = 0, gymSec = 0;
+
+    activities.forEach((act) => {
+      if (act.isCommute) return;
+      if (act.sportType === "road_cycling" || act.sportType === "zwift") {
+        bikeKm += act.distanceM / 1000;
+        bikeSec += act.durationSec;
+        bikeEle += act.elevationGainM || 0;
+        if (act.avgPowerW) {
+          bikeWattsSum += act.avgPowerW;
+          bikeWattCount++;
+        }
+      } else if (act.sportType === "running") {
+        runKm += act.distanceM / 1000;
+        runSec += act.durationSec;
+        if (act.avgPaceSecPerKm) {
+          runPaceSum += act.avgPaceSecPerKm;
+          runPaceCount++;
+        }
+      } else if (act.sportType === "swimming") {
+        swimM += act.distanceM;
+        swimSec += act.durationSec;
+        if (act.swolf) {
+          swimSwolfSum += act.swolf;
+          swimSwolfCount++;
+        }
+      } else if (act.sportType === "gym") {
+        gymCount++;
+        gymSec += act.durationSec;
+      }
+    });
+
+    return {
+      bike: {
+        km: bikeKm.toFixed(1),
+        hours: (bikeSec / 3600).toFixed(1),
+        ele: Math.round(bikeEle),
+        avgWatts: bikeWattCount > 0 ? Math.round(bikeWattsSum / bikeWattCount) : profile?.currentFtpW || 285,
+      },
+      run: {
+        km: runKm.toFixed(1),
+        hours: (runSec / 3600).toFixed(1),
+        avgPaceSec: runPaceCount > 0 ? Math.round(runPaceSum / runPaceCount) : profile?.runThresholdPaceSec || 250,
+      },
+      swim: {
+        meters: Math.round(swimM),
+        hours: (swimSec / 3600).toFixed(1),
+        avgSwolf: swimSwolfCount > 0 ? Math.round(swimSwolfSum / swimSwolfCount) : 34,
+      },
+      gym: {
+        sessions: gymCount,
+        hours: (gymSec / 3600).toFixed(1),
+      },
+    };
+  }, [activities, profile]);
+
   const formatPace = (secPerKm?: number | null) => {
     if (!secPerKm) return "--:--";
     const mins = Math.floor(secPerKm / 60);
@@ -303,26 +474,26 @@ export function DashboardApp() {
 
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveTab("today")}
+              onClick={() => setActiveTab("briefing")}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                activeTab === "today"
+                activeTab === "briefing"
                   ? "bg-zinc-800/90 text-white shadow-sm border border-zinc-700/60"
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
               }`}
             >
               <ActivityIcon className="h-4 w-4 text-emerald-400" />
-              Heute & Status
+              Briefing
             </button>
             <button
-              onClick={() => setActiveTab("planner")}
+              onClick={() => setActiveTab("analytics")}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                activeTab === "planner"
+                activeTab === "analytics"
                   ? "bg-zinc-800/90 text-white shadow-sm border border-zinc-700/60"
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
               }`}
             >
-              <Calendar className="h-4 w-4 text-sky-400" />
-              Wochenplaner
+              <BarChart3 className="h-4 w-4 text-sky-400" />
+              Analytics
             </button>
             <button
               onClick={() => setActiveTab("chat")}
@@ -333,7 +504,23 @@ export function DashboardApp() {
               }`}
             >
               <Sparkles className="h-4 w-4 text-purple-400" />
-              AI Coach Chat
+              AI Coach
+              {!profile?.setupCompleted && (
+                <span className="ml-auto rounded-full bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.2 font-mono">
+                  Setup
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("planner")}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === "planner"
+                  ? "bg-zinc-800/90 text-white shadow-sm border border-zinc-700/60"
+                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+              }`}
+            >
+              <Calendar className="h-4 w-4 text-teal-400" />
+              Wochenplaner
             </button>
             <button
               onClick={() => setActiveTab("gym")}
@@ -349,14 +536,19 @@ export function DashboardApp() {
           </nav>
         </div>
 
-        {/* Athlete Profile Footer */}
+        {/* Sidebar Footer */}
         <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/50 backdrop-blur-md p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-400">Athletenstatus</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Sync Aktiv
-            </span>
+            <span className="text-xs font-medium text-zinc-400">Athlet</span>
+            {profile?.setupCompleted ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400 font-mono">
+                <Check className="h-3 w-3" /> Setup Aktiv
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 font-mono">
+                Setup offen
+              </span>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
@@ -364,16 +556,8 @@ export function DashboardApp() {
               <p className="font-mono tabular-nums font-semibold text-zinc-200">{profile?.currentFtpW || 285} W</p>
             </div>
             <div>
-              <p className="text-zinc-500">Lauf Schwellen-Pace</p>
+              <p className="text-zinc-500">Lauf Pace</p>
               <p className="font-mono tabular-nums font-semibold text-amber-400">{formatPace(profile?.runThresholdPaceSec || 250)}</p>
-            </div>
-            <div>
-              <p className="text-zinc-500">Ruhepuls</p>
-              <p className="font-mono tabular-nums font-semibold text-zinc-200">{profile?.restingHr || 46} bpm</p>
-            </div>
-            <div>
-              <p className="text-zinc-500">Gewicht</p>
-              <p className="font-mono tabular-nums font-semibold text-zinc-200">{profile?.weightKg || 71.4} kg</p>
             </div>
           </div>
           <button
@@ -389,18 +573,19 @@ export function DashboardApp() {
 
       {/* MAIN VIEW */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header */}
+        {/* TOP HEADER */}
         <header className="flex h-14 items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 px-4 md:px-6 backdrop-blur-md">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold tracking-wide text-zinc-100">
-              {activeTab === "today" && "Performance Overview & Diagnostik"}
+              {activeTab === "briefing" && "Morning Briefing & Status"}
+              {activeTab === "analytics" && "Deep Analytics & Belastungsmatrix"}
+              {activeTab === "chat" && "AI Head Coach (Setup & Vision-Upload)"}
               {activeTab === "planner" && "7-Tage Trainingszyklus"}
-              {activeTab === "chat" && "AI Head Coach (Diagnostiker & Planer)"}
-              {activeTab === "gym" && "Gym Pläne (Hypertrophie, RIR & ZNS)"}
+              {activeTab === "gym" && "Gym Pläne (A/B/C Editor)"}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {syncNotice && (
               <span className="text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 rounded px-2.5 py-1">
                 {syncNotice}
@@ -417,154 +602,377 @@ export function DashboardApp() {
           </div>
         </header>
 
-        {/* Scrollable Container */}
+        {/* TAB 1: BRIEFING (LANDING PAGE) */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6 space-y-6">
-          {/* TAB 1: HEUTE & STATUS */}
-          {activeTab === "today" && (
+          {activeTab === "briefing" && (
             <div className="space-y-6 max-w-6xl mx-auto">
-              {/* TOP KPI BENTO-GRID */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-4 relative overflow-hidden backdrop-blur-md">
-                  <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-xs font-medium">Training Readiness</span>
-                    <Zap className="h-4 w-4 text-emerald-400" />
+              {/* 1. TOP LIVE-BAR & WETTER-WIDGET */}
+              <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-r from-zinc-900/70 via-zinc-900/50 to-zinc-900/70 p-4 md:p-5 backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-800/80 border border-zinc-700/60 text-amber-400 shadow-inner">
+                    <CloudSun className="h-6 w-6" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-3xl font-bold tabular-nums text-emerald-400">
-                      {latestMetric?.trainingReadiness || 89}
-                    </span>
-                    <span className="text-xs text-zinc-400">/ 100</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl font-bold font-mono tabular-nums text-zinc-100">
+                        {weather ? `${Math.round(weather.current.temp)}°C` : "17°C"}
+                      </span>
+                      <span
+                        className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${
+                          weather?.current.outdoorIndex === "green"
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                            : weather?.current.outdoorIndex === "yellow"
+                            ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                            : "border-rose-500/40 bg-rose-500/10 text-rose-400"
+                        }`}
+                      >
+                        {weather?.current.outdoorText || "Top Rennrad-Wetter"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-zinc-400 mt-1 font-mono">
+                      <span className="flex items-center gap-1">
+                        <Wind className="h-3 w-3" /> {weather ? Math.round(weather.current.windKmH) : 12} km/h
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <Droplets className="h-3 w-3" /> {weather ? weather.current.precipProb : 10}% Regen
+                      </span>
+                      <span>•</span>
+                      <span>Potsdam / Berlin</span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-1">Bereit für harte Schwellen- & VO2max Reize</p>
                 </div>
 
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-4 relative overflow-hidden backdrop-blur-md">
-                  <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-xs font-medium">HRV Status</span>
-                    <Heart className="h-4 w-4 text-rose-400" />
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-3xl font-bold tabular-nums text-zinc-100">
-                      {latestMetric?.hrvLastNight || 73}
-                    </span>
-                    <span className="text-xs text-zinc-400 font-mono">ms (7d: {latestMetric?.hrv7dAvg || 68}ms)</span>
-                  </div>
-                  <span className="inline-block mt-1 text-[11px] font-medium text-emerald-400">
-                    Ausgewogen (+5ms über Baseline)
-                  </span>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-4 relative overflow-hidden backdrop-blur-md">
-                  <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-xs font-medium">Schlaf Score</span>
-                    <Moon className="h-4 w-4 text-indigo-400" />
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-3xl font-bold tabular-nums text-indigo-300">
-                      {latestMetric?.sleepScore || 88}
-                    </span>
-                    <span className="text-xs text-zinc-400 font-mono">
-                      {Math.floor((latestMetric?.sleepDurationSec || 28800) / 3600)}h{" "}
-                      {Math.floor(((latestMetric?.sleepDurationSec || 28800) % 3600) / 60)}m
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-1">Erholung: Tiefschlaf 1h 58m</p>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-4 relative overflow-hidden backdrop-blur-md">
-                  <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-xs font-medium">Acute Load & Body Battery</span>
-                    <BatteryCharging className="h-4 w-4 text-amber-400" />
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-3xl font-bold tabular-nums text-zinc-100">
-                      {latestMetric?.acuteLoad || 780}
-                    </span>
-                    <span className="text-xs text-zinc-400 font-mono">BB Max {latestMetric?.bodyBatteryMax || 96}</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-1">Rad: {profile?.currentFtpW || 285}W • Lauf: {formatPace(profile?.runThresholdPaceSec || 250)}</p>
+                {/* 6h Weather Mini Forecast */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+                  {weather?.forecast6h && weather.forecast6h.length > 0 ? (
+                    weather.forecast6h.map((f, i) => (
+                      <div key={i} className="text-center rounded-lg bg-zinc-950/50 border border-zinc-800 px-2.5 py-1.5 text-xs font-mono">
+                        <span className="text-[10px] text-zinc-500 block">{f.time}</span>
+                        <span className="font-semibold text-zinc-200 block">{Math.round(f.temp)}°</span>
+                        <span className="text-[10px] text-sky-400 block">{f.precipProb}%</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-zinc-500 font-mono">6h Prognose lädt...</div>
+                  )}
+                  <button
+                    onClick={handleGarminSync}
+                    disabled={syncing}
+                    className="ml-2 flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 px-3 py-2 text-xs font-medium text-zinc-200 transition-colors"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin text-emerald-400" : ""}`} />
+                    Sync
+                  </button>
                 </div>
               </div>
 
-              {/* RECHARTS SECTION: 14-TAGE TRENDS */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* 1. HRV & Readiness Spline Trend */}
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-4 md:p-5 backdrop-blur-md flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200">HRV- & Readiness-Trend (14 Tage)</h3>
-                      <p className="text-xs text-zinc-400">Nächtliche HRV vs. 7-Tage Baseline & Readiness-Score</p>
+              {/* 2. SLEEP & MORNING RECOVERY HERO-CARD */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Sleep Analysis Ring & Breakdown */}
+                <div className="lg:col-span-2 rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-5 backdrop-blur-md flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-indigo-400" />
+                        <h3 className="text-sm font-semibold text-zinc-200">Schlafanalyse Letzte Nacht</h3>
+                      </div>
+                      <span className="text-xs text-indigo-400 font-mono">
+                        {Math.floor(sleepDuration / 3600)}h {Math.floor((sleepDuration % 3600) / 60)}m Dauer
+                      </span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="flex items-center gap-1.5 text-rose-400 font-medium">
-                        <span className="h-2 w-2 rounded-full bg-rose-400" /> HRV Nacht
-                      </span>
-                      <span className="flex items-center gap-1.5 text-zinc-400 font-medium">
-                        <span className="h-2 w-2 rounded-full bg-zinc-400" /> 7d Schnitt
-                      </span>
-                      <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" /> Readiness
-                      </span>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+                      {/* Gauge / Score Badge */}
+                      <div className="flex flex-col items-center justify-center h-28 w-28 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 shrink-0">
+                        <span className="text-4xl font-bold font-mono tabular-nums text-indigo-300">
+                          {latestMetric?.sleepScore || 88}
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono mt-0.5">Sleep Score</span>
+                      </div>
+
+                      {/* Phasen Bar & Details */}
+                      <div className="flex-1 space-y-3">
+                        <div className="h-4 w-full rounded-full bg-zinc-950 overflow-hidden flex border border-zinc-800">
+                          <div style={{ width: `${deepPct}%` }} className="bg-indigo-500 h-full" title="Tiefschlaf" />
+                          <div style={{ width: `${remPct}%` }} className="bg-purple-500 h-full" title="REM Schlaf" />
+                          <div style={{ width: `${lightPct}%` }} className="bg-sky-500/70 h-full" title="Leichtschlaf" />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                          <div>
+                            <span className="text-indigo-400 font-semibold block">Tiefschlaf</span>
+                            <span className="text-zinc-200">{Math.floor(deepSleep / 3600)}h {Math.floor((deepSleep % 3600) / 60)}m ({deepPct}%)</span>
+                          </div>
+                          <div>
+                            <span className="text-purple-400 font-semibold block">REM Schlaf</span>
+                            <span className="text-zinc-200">{Math.floor(remSleep / 3600)}h {Math.floor((remSleep % 3600) / 60)}m ({remPct}%)</span>
+                          </div>
+                          <div>
+                            <span className="text-sky-400 font-semibold block">Leichtschlaf</span>
+                            <span className="text-zinc-200">{Math.floor(lightSleep / 3600)}h {Math.floor((lightSleep % 3600) / 60)}m ({lightPct}%)</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
+                  <p className="text-[11px] text-zinc-400 mt-4 border-t border-zinc-800/80 pt-3">
+                    Hervorragende parasympathische Regeneration. Tiefschlaf liegt 18% über deinem 7-Tage-Schnitt.
+                  </p>
+                </div>
+
+                {/* Morning Readiness & HRV Card */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/50 p-5 backdrop-blur-md flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-zinc-400">Erholung & Autonomes Nervensystem</span>
+                      <Heart className="h-4 w-4 text-rose-400" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                        <span className="text-[10px] text-zinc-500 block">HRV Nacht</span>
+                        <span className="text-2xl font-bold font-mono tabular-nums text-zinc-100 block">
+                          {latestMetric?.hrvLastNight || 73} <span className="text-xs text-zinc-500">ms</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono">Baseline: {latestMetric?.hrv7dAvg || 68}ms</span>
+                      </div>
+
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                        <span className="text-[10px] text-zinc-500 block">Readiness</span>
+                        <span className="text-2xl font-bold font-mono tabular-nums text-emerald-400 block">
+                          {latestMetric?.trainingReadiness || 89} <span className="text-xs text-zinc-500">/100</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono">Optimal</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-xs font-mono">
+                      <div className="flex justify-between text-zinc-400">
+                        <span>Ruhepuls (RHR):</span>
+                        <span className="text-zinc-200 font-semibold">{latestMetric?.restingHr || 46} bpm</span>
+                      </div>
+                      <div className="flex justify-between text-zinc-400">
+                        <span>Body Battery:</span>
+                        <span className="text-amber-400 font-semibold">
+                          {latestMetric?.bodyBatteryMin || 28} → {latestMetric?.bodyBatteryMax || 96} (+68)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. HEUTIGER FOKUS & ACTIVITY FEED */}
+              <div className="rounded-2xl border border-zinc-800/90 bg-zinc-900/40 p-5 md:p-6 backdrop-blur-md space-y-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-800/80">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+                        Heutiger Fokus
+                      </span>
+                      {!profile?.setupCompleted && (
+                        <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                          Setup im AI Coach ausstehend
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-lg md:text-xl font-bold text-zinc-100 mt-1">
+                      {todayWorkout ? todayWorkout.title : "Regeneration oder freie Einheit"}
+                    </h3>
+                    <p className="text-xs md:text-sm text-zinc-400 max-w-2xl mt-0.5">
+                      {todayWorkout?.description || "Kein strukturiertes Training geplant. Nutze den Ruhetag für Erholung."}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {!profile?.setupCompleted ? (
+                      <button
+                        onClick={() => setActiveTab("chat")}
+                        className="flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 px-4 py-2 text-xs font-semibold text-white transition-colors"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Setup jetzt abschließen
+                      </button>
+                    ) : (
+                      todayWorkout?.zwoXml && (
+                        <button
+                          onClick={() => handleDownloadZwo(todayWorkout)}
+                          className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 px-3.5 py-2 text-xs font-medium text-zinc-200 transition-colors"
+                        >
+                          <Download className="h-3.5 w-3.5 text-sky-400" />
+                          .zwo Download
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                {/* Letzte 4 Aktivitäten */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-semibold text-zinc-300">Letzte Aktivitäten</h4>
+                    <button
+                      onClick={() => setHideCommutes(!hideCommutes)}
+                      className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+                    >
+                      <Filter className="h-3 w-3" />
+                      Pendeln ausblenden: {hideCommutes ? "An" : "Aus"}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {filteredActivities.slice(0, 4).map((act) => (
+                      <div
+                        key={act.activityId}
+                        onClick={() => setSelectedActivity(act)}
+                        className="rounded-xl border border-zinc-800/80 bg-zinc-950/60 p-3.5 flex items-center justify-between cursor-pointer hover:border-zinc-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
+                              act.sportType === "running"
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                : act.sportType === "swimming"
+                                ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
+                                : act.sportType === "gym"
+                                ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
+                                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                            }`}
+                          >
+                            {act.sportType === "running" ? (
+                              <Footprints className="h-4 w-4" />
+                            ) : act.sportType === "swimming" ? (
+                              <Waves className="h-4 w-4" />
+                            ) : act.sportType === "gym" ? (
+                              <Dumbbell className="h-4 w-4" />
+                            ) : (
+                              <Bike className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-xs font-semibold text-zinc-200 block truncate max-w-[200px]">
+                              {act.name}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 font-mono">
+                              {Math.round(act.durationSec / 60)} min •{" "}
+                              {act.sportType === "running" && act.avgPaceSecPerKm
+                                ? formatPace(act.avgPaceSecPerKm)
+                                : act.avgPowerW
+                                ? `${act.avgPowerW} W`
+                                : `${(act.distanceM / 1000).toFixed(1)} km`}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-zinc-500" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: ANALYTICS (DEEP DATA SEITE) */}
+          {activeTab === "analytics" && (
+            <div className="space-y-6 max-w-6xl mx-auto">
+              {/* 1. WEEKLY DISCIPLINE BREAKDOWN */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                {/* Radsport */}
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/10 p-4">
+                  <div className="flex items-center justify-between text-emerald-400 mb-2">
+                    <span className="text-xs font-semibold">Radsport (Rein)</span>
+                    <Bike className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1 font-mono">
+                    <p className="text-2xl font-bold tabular-nums text-zinc-100">{weeklyTotals.bike.km} km</p>
+                    <p className="text-xs text-zinc-400">
+                      {weeklyTotals.bike.hours}h • {weeklyTotals.bike.ele}m D+ • Ø {weeklyTotals.bike.avgWatts}W
+                    </p>
+                  </div>
+                </div>
+
+                {/* Laufen */}
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-950/10 p-4">
+                  <div className="flex items-center justify-between text-amber-400 mb-2">
+                    <span className="text-xs font-semibold">Laufen</span>
+                    <Footprints className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1 font-mono">
+                    <p className="text-2xl font-bold tabular-nums text-zinc-100">{weeklyTotals.run.km} km</p>
+                    <p className="text-xs text-zinc-400">
+                      {weeklyTotals.run.hours}h • Ø {formatPace(weeklyTotals.run.avgPaceSec)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Schwimmen */}
+                <div className="rounded-2xl border border-cyan-500/30 bg-cyan-950/10 p-4">
+                  <div className="flex items-center justify-between text-cyan-400 mb-2">
+                    <span className="text-xs font-semibold">Schwimmen</span>
+                    <Waves className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1 font-mono">
+                    <p className="text-2xl font-bold tabular-nums text-zinc-100">{weeklyTotals.swim.meters} m</p>
+                    <p className="text-xs text-zinc-400">
+                      {weeklyTotals.swim.hours}h • Ø SWOLF {weeklyTotals.swim.avgSwolf}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Gym */}
+                <div className="rounded-2xl border border-violet-500/30 bg-violet-950/10 p-4">
+                  <div className="flex items-center justify-between text-violet-400 mb-2">
+                    <span className="text-xs font-semibold">Krafttraining</span>
+                    <Dumbbell className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1 font-mono">
+                    <p className="text-2xl font-bold tabular-nums text-zinc-100">{weeklyTotals.gym.sessions} Sessions</p>
+                    <p className="text-xs text-zinc-400">{weeklyTotals.gym.hours}h Trainingszeit</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. RECHARTS DEEP CHARTS */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* HRV Trend */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-md">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-zinc-200">14-Tage HRV & Readiness Trend</h3>
+                    <span className="text-xs text-zinc-400 font-mono">Autonome Balance</span>
+                  </div>
                   <div className="h-56 w-full pt-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={hrvChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="hrvGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
-                          </linearGradient>
-                          <linearGradient id="readinessGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                         <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
                         <YAxis stroke="#71717a" fontSize={11} tickLine={false} domain={[40, 100]} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "#18181b", borderColor: "#3f3f46", borderRadius: "0.75rem", fontSize: "12px" }}
-                          labelStyle={{ color: "#a1a1aa" }}
-                        />
-                        <ReferenceLine y={68} stroke="#52525b" strokeDasharray="3 3" label={{ value: "Baseline", fill: "#71717a", fontSize: 10 }} />
-                        <Area type="monotone" dataKey="hrvNight" stroke="#f43f5e" strokeWidth={2.5} fillOpacity={1} fill="url(#hrvGradient)" name="HRV (ms)" />
-                        <Area type="monotone" dataKey="hrvAvg" stroke="#a1a1aa" strokeWidth={1.5} strokeDasharray="4 4" fill="none" name="7d Baseline" />
-                        <Area type="monotone" dataKey="readiness" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#readinessGradient)" name="Readiness" />
+                        <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#3f3f46", borderRadius: "0.75rem", fontSize: "12px" }} />
+                        <Area type="monotone" dataKey="hrvNight" stroke="#f43f5e" strokeWidth={2.5} fill="#f43f5e" fillOpacity={0.15} name="HRV Nacht" />
+                        <Area type="monotone" dataKey="hrvAvg" stroke="#a1a1aa" strokeWidth={1.5} strokeDasharray="3 3" fill="none" name="7d Baseline" />
+                        <Area type="monotone" dataKey="readiness" stroke="#10b981" strokeWidth={2} fill="none" name="Readiness" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* 2. Acute Load Stacked Bar Chart */}
-                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-4 md:p-5 backdrop-blur-md flex flex-col justify-between">
+                {/* 14-Tage Belastungs-Stack */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-md">
                   <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-200">Tägliche Belastung (TSS & Sportarten)</h3>
-                      <p className="text-xs text-zinc-400">Verteilung über die letzten 14 Tage</p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs flex-wrap">
-                      <span className="flex items-center gap-1 text-emerald-400"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Rad</span>
-                      <span className="flex items-center gap-1 text-amber-400"><span className="h-2 w-2 rounded-full bg-amber-500" /> Lauf</span>
-                      <span className="flex items-center gap-1 text-cyan-400"><span className="h-2 w-2 rounded-full bg-cyan-500" /> Schwimm</span>
-                      <span className="flex items-center gap-1 text-violet-400"><span className="h-2 w-2 rounded-full bg-violet-500" /> Gym</span>
-                    </div>
+                    <h3 className="text-sm font-semibold text-zinc-200">14-Tage Belastung (TSS gestackt)</h3>
+                    <span className="text-xs text-zinc-400 font-mono">Disziplinen</span>
                   </div>
-
                   <div className="h-56 w-full pt-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={loadChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                         <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
                         <YAxis stroke="#71717a" fontSize={11} tickLine={false} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "#18181b", borderColor: "#3f3f46", borderRadius: "0.75rem", fontSize: "12px" }}
-                          labelStyle={{ color: "#a1a1aa" }}
-                        />
-                        <Bar dataKey="Rad" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="Lauf" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="Schwimm" stackId="a" fill="#06b6d4" radius={[0, 0, 0, 0]} />
+                        <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#3f3f46", borderRadius: "0.75rem", fontSize: "12px" }} />
+                        <Bar dataKey="Rad" stackId="a" fill="#10b981" />
+                        <Bar dataKey="Lauf" stackId="a" fill="#f59e0b" />
+                        <Bar dataKey="Schwimm" stackId="a" fill="#06b6d4" />
                         <Bar dataKey="Gym" stackId="a" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -572,228 +980,228 @@ export function DashboardApp() {
                 </div>
               </div>
 
-              {/* HEUTIGES TRAINING CARD */}
-              <div className="rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-zinc-900/80 to-zinc-900/40 p-5 md:p-6 backdrop-blur-md">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-800/80">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                        Heutiges Training
-                      </span>
-                      {todayWorkout?.syncedToZwift && (
-                        <span className="text-xs text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20 flex items-center gap-1 font-mono">
-                          <CheckCircle2 className="h-3 w-3" /> In Zwift synchronisiert
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-lg md:text-xl font-bold text-zinc-100">
-                      {todayWorkout ? todayWorkout.title : "Ruhetag oder freie Ausfahrt"}
-                    </h3>
-                    <p className="text-xs md:text-sm text-zinc-400 max-w-2xl">
-                      {todayWorkout?.description || "Kein strukturiertes Training geplant. Regeneriere oder bewege dich locker."}
-                    </p>
+              {/* 3. 7-TAGE SCHLAFKONSISTENZ & ERMÜDUNGS-MATRIX */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Schlafkonsistenz */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-md">
+                  <h3 className="text-sm font-semibold text-zinc-200 mb-3">7-Tage Schlafkonsistenz & Tiefschlaf</h3>
+                  <div className="h-52 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sleepChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                        <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#71717a" fontSize={11} tickLine={false} domain={[0, 10]} />
+                        <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#3f3f46", borderRadius: "0.75rem", fontSize: "12px" }} />
+                        <Bar dataKey="hoursTotal" fill="#6366f1" name="Gesamt (h)" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="deepHours" fill="#8b5cf6" name="Tiefschlaf (h)" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-
-                  {todayWorkout && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {todayWorkout.zwoXml && (
-                        <button
-                          onClick={() => handleDownloadZwo(todayWorkout)}
-                          className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 px-3.5 py-2 text-xs font-medium text-zinc-200 transition-colors"
-                        >
-                          <Download className="h-3.5 w-3.5 text-sky-400" />
-                          .zwo Datei
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setActiveTab("chat");
-                          handleSendMessage("Passe mein heutiges Training an: Ich habe heute nur 45 Minuten Zeit.");
-                        }}
-                        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-medium text-white transition-colors"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        AI Coach anpassen
-                      </button>
-                    </div>
-                  )}
                 </div>
 
-                {todayWorkout?.structuredStepsJson && (
-                  <div className="mt-4 pt-2">
-                    <p className="text-xs font-medium text-zinc-400 mb-2">Intervall-Profil (% FTP)</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-9 gap-2">
-                      {todayWorkout.structuredStepsJson.map((step, idx) => (
-                        <div
-                          key={idx}
-                          className={`rounded-lg p-2.5 border text-center transition-all ${
-                            step.targetFtpPct >= 100
-                              ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
-                              : step.targetFtpPct >= 85
-                              ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                              : "border-zinc-800 bg-zinc-900/60 text-zinc-300"
-                          }`}
-                        >
-                          <span className="text-[10px] font-mono text-zinc-400 block truncate">
-                            {Math.floor(step.durationSec / 60)}m
-                          </span>
-                          <span className="font-mono text-sm font-bold tabular-nums block">
-                            {step.targetFtpPct}%
-                          </span>
-                          <span className="text-[10px] text-zinc-500 block truncate">{step.label}</span>
+                {/* Subsystem Muscle & CNS Fatigue Matrix */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-md flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-200 mb-1">Subsystem Fatigue Matrix</h3>
+                    <p className="text-xs text-zinc-400 mb-4">Berechnete Vorbelastung der letzten 7 Tage (1-10)</p>
+
+                    <div className="space-y-3 font-mono text-xs">
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-zinc-300">Beine & Knie-Strecker</span>
+                          <span className="text-amber-400 font-bold">6 / 10</span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ACTIVITY FEED WITH RUNNING SUPPORT & AUTO-COMMUTE FILTER */}
-              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-5 backdrop-blur-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ActivityIcon className="h-4 w-4 text-emerald-400" />
-                    <h3 className="text-sm font-semibold text-zinc-200">Aktivitäten</h3>
-                    <span className="text-xs text-zinc-500 font-mono">({filteredActivities.length})</span>
-                  </div>
-
-                  <button
-                    onClick={() => setHideCommutes(!hideCommutes)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      hideCommutes
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                        : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    <Filter className="h-3 w-3" />
-                    Pendeln (ohne Watt) ausblenden: {hideCommutes ? "An" : "Aus"}
-                  </button>
-                </div>
-
-                <div className="divide-y divide-zinc-800/60">
-                  {filteredActivities.map((act) => (
-                    <div
-                      key={act.activityId}
-                      className="py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-zinc-800/20 px-2 rounded-lg transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
-                            act.isCommute
-                              ? "border-zinc-800 bg-zinc-900 text-zinc-400"
-                              : act.sportType === "running"
-                              ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                              : act.sportType === "swimming"
-                              ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
-                              : act.sportType === "gym"
-                              ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
-                              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                          }`}
-                        >
-                          {act.sportType === "running" ? (
-                            <Footprints className="h-5 w-5" />
-                          ) : act.sportType === "swimming" ? (
-                            <Waves className="h-5 w-5" />
-                          ) : act.sportType === "gym" ? (
-                            <Dumbbell className="h-5 w-5" />
-                          ) : (
-                            <Bike className="h-5 w-5" />
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-zinc-200">{act.name}</span>
-                            {act.isCommute && (
-                              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
-                                Auto-Commute (0W)
-                              </span>
-                            )}
-                            {act.sportType === "running" && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">
-                                Lauf
-                              </span>
-                            )}
-                            {act.linkedGymTemplateId && (
-                              <span className="text-[10px] bg-violet-500/10 text-violet-400 border border-violet-500/30 px-1.5 py-0.5 rounded font-mono">
-                                Plan {gymTemplates.find((t) => t.id === act.linkedGymTemplateId)?.code || "A"}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-zinc-400 mt-0.5 font-mono">
-                            <span>{new Date(act.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                            <span>•</span>
-                            <span>{Math.round(act.durationSec / 60)} min</span>
-                            {act.distanceM > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>{(act.distanceM / 1000).toFixed(1)} km</span>
-                              </>
-                            )}
-                            {act.sportType === "running" && act.avgPaceSecPerKm && (
-                              <>
-                                <span>•</span>
-                                <span className="text-amber-400 font-semibold">{formatPace(act.avgPaceSecPerKm)}</span>
-                              </>
-                            )}
-                            {act.avgPowerW ? (
-                              <>
-                                <span>•</span>
-                                <span className="text-emerald-400 font-semibold">{act.avgPowerW} W</span>
-                              </>
-                            ) : null}
-                            {act.avgCadence ? (
-                              <>
-                                <span>•</span>
-                                <span>{act.avgCadence} {act.sportType === "running" ? "spm" : "rpm"}</span>
-                              </>
-                            ) : null}
-                            {act.elevationGainM > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>{Math.round(act.elevationGainM)}m D+</span>
-                              </>
-                            )}
-                          </div>
+                        <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                          <div className="h-full bg-amber-500 rounded-full" style={{ width: "60%" }} />
                         </div>
                       </div>
 
-                      {/* 1-Click Gym Linker */}
-                      {act.sportType === "gym" && (
-                        <div className="flex items-center gap-2 self-start md:self-center">
-                          <span className="text-xs text-zinc-400">Plan zuweisen:</span>
-                          <div className="flex gap-1">
-                            {gymTemplates.map((t) => (
-                              <button
-                                key={t.id}
-                                onClick={() => handleAssignGym(act.activityId, t.id)}
-                                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors font-mono ${
-                                  act.linkedGymTemplateId === t.id
-                                    ? "bg-violet-600 text-white font-bold"
-                                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                                }`}
-                              >
-                                {t.code}
-                              </button>
-                            ))}
-                          </div>
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-zinc-300">Posterior Chain & Glutes</span>
+                          <span className="text-emerald-400 font-bold">4 / 10</span>
                         </div>
-                      )}
+                        <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: "40%" }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-zinc-300">Oberkörper Push & Pull</span>
+                          <span className="text-emerald-400 font-bold">3 / 10</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: "30%" }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-zinc-300">ZNS (Zentrales Nervensystem)</span>
+                          <span className="text-emerald-400 font-bold">3 / 10 (Erholt)</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                          <div className="h-full bg-emerald-400 rounded-full" style={{ width: "30%" }} />
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 mt-4 border-t border-zinc-800 pt-2 font-mono">
+                    Interferenz-Status: Grünes Licht für Schwellenintervalle auf dem Rad.
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: WOCHENPLANER */}
+          {/* TAB 3: AI COACH (MIT SETUP-MODUS & BILD-UPLOAD) */}
+          {activeTab === "chat" && (
+            <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-8.5rem)] rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md overflow-hidden">
+              <div className="flex items-center justify-between border-b border-zinc-800/80 p-3.5 bg-zinc-950/60">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-semibold text-zinc-100">AI Performance Coach</h3>
+                    <p className="text-[10px] text-zinc-400">
+                      {profile?.setupCompleted ? "Diagnostiker & Planer" : "Strukturierter Setup-Modus"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-1.5">
+                  {!profile?.setupCompleted && (
+                    <button
+                      onClick={() => handleSendMessage("Hier sind meine Eckdaten: FTP 285W, 10k Laufzeit 42min. Bitte speichere mein Setup ab.")}
+                      className="text-[11px] rounded-lg border border-amber-500/40 bg-amber-950/30 text-amber-300 px-2.5 py-1 hover:bg-amber-900/40"
+                    >
+                      Quick Setup Check
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleSendMessage("Plane meine Woche")}
+                    className="text-[11px] rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-emerald-300 px-2.5 py-1 hover:bg-emerald-900/40"
+                  >
+                    Woche planen
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Message Scroll */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl p-4 text-xs md:text-sm leading-relaxed space-y-2 ${
+                        m.role === "user"
+                          ? "bg-emerald-600 text-white rounded-br-none shadow-md"
+                          : "bg-zinc-800/85 text-zinc-200 border border-zinc-700/60 rounded-bl-none shadow-sm"
+                      }`}
+                    >
+                      {/* Image Thumbnails inside message */}
+                      {m.images && m.images.length > 0 && (
+                        <div className="flex gap-2 flex-wrap pb-1">
+                          {m.images.map((img, i) => (
+                            <img
+                              key={i}
+                              src={img}
+                              alt="Upload preview"
+                              className="h-20 w-20 object-cover rounded-lg border border-zinc-700"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap">{m.content}</div>
+                    </div>
+                  </div>
+                ))}
+                {isAiReplying && (
+                  <div className="flex justify-start">
+                    <div className="bg-zinc-800/60 border border-zinc-700/40 rounded-2xl p-3 text-xs text-zinc-400 flex items-center gap-2">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                      Coach analysiert Daten & Vision-Uploads...
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Chat Input & Image Preview Bar */}
+              <div className="p-3 border-t border-zinc-800/80 bg-zinc-950/80 space-y-2">
+                {/* Uploaded Thumbnails Preview */}
+                {attachedImages.length > 0 && (
+                  <div className="flex items-center gap-2 p-1.5 bg-zinc-900/80 border border-zinc-800 rounded-xl">
+                    {attachedImages.map((img, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={img} alt="thumbnail" className="h-12 w-12 object-cover rounded-lg border border-zinc-700" />
+                        <button
+                          onClick={() => setAttachedImages(attachedImages.filter((_, i) => i !== idx))}
+                          className="absolute -top-1 -right-1 bg-rose-600 rounded-full p-0.5 text-white"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {attachedImages.length}/4 Screenshots angehängt
+                    </span>
+                  </div>
+                )}
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }}
+                  onPaste={handlePaste}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageSelect}
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Screenshot oder Gym-Plan Bild anhängen"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 transition-colors"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+
+                  <input
+                    type="text"
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder="Frag den Coach, lade Gym-Screenshots hoch oder sag 'Plane meine Woche'..."
+                    className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-2.5 text-xs md:text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={(!inputMessage.trim() && attachedImages.length === 0) || isAiReplying}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 transition-colors"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: WOCHENPLANER */}
           {activeTab === "planner" && (
             <div className="space-y-6 max-w-6xl mx-auto">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-zinc-100">7-Tage Trainingszyklus</h3>
                   <p className="text-xs text-zinc-400">
-                    Polarisiertes Ausdauertraining, HRV-Monitoring und Interferenz-Vermeidung
+                    Polarisierte Steuerung, HRV-Monitoring und Interferenz-Vermeidung
                   </p>
                 </div>
                 <button
@@ -804,7 +1212,7 @@ export function DashboardApp() {
                   className="flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white transition-all shadow-md shadow-emerald-600/20"
                 >
                   <Sparkles className="h-4 w-4" />
-                  Woche von AI planen lassen
+                  Woche von AI neu planen
                 </button>
               </div>
 
@@ -859,98 +1267,14 @@ export function DashboardApp() {
             </div>
           )}
 
-          {/* TAB 3: AI COACH CHAT (DIAGNOSTIKER & PLANER) */}
-          {activeTab === "chat" && (
-            <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-8.5rem)] rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md overflow-hidden">
-              <div className="flex items-center justify-between border-b border-zinc-800/80 p-3.5 bg-zinc-950/60">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    <Sparkles className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold text-zinc-100">AI Head Coach</h3>
-                    <p className="text-[10px] text-zinc-400">Strikter Diagnostiker & Trainingsplaner</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => handleSendMessage("Plane meine Woche")}
-                    className="text-[11px] rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-emerald-300 px-2.5 py-1 hover:bg-emerald-900/40"
-                  >
-                    Woche jetzt planen
-                  </button>
-                  <button
-                    onClick={() => handleSendMessage("Erstelle mir jetzt eine Einheit für heute")}
-                    className="text-[11px] rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800"
-                  >
-                    Heute planen
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-2xl p-4 text-xs md:text-sm leading-relaxed ${
-                        m.role === "user"
-                          ? "bg-emerald-600 text-white rounded-br-none shadow-md"
-                          : "bg-zinc-800/85 text-zinc-200 border border-zinc-700/60 rounded-bl-none shadow-sm"
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap">{m.content}</div>
-                    </div>
-                  </div>
-                ))}
-                {isAiReplying && (
-                  <div className="flex justify-start">
-                    <div className="bg-zinc-800/60 border border-zinc-700/40 rounded-2xl p-3 text-xs text-zinc-400 flex items-center gap-2">
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-400" />
-                      Coach analysiert physiologische Parameter...
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-3 border-t border-zinc-800/80 bg-zinc-950/80">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Frag den Coach oder sag 'Plane meine Woche'..."
-                    className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 py-2.5 text-xs md:text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!inputMessage.trim() || isAiReplying}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 transition-colors"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: GYM PLÄNE A/B/C (DETAILLIERTE TABELLEN & MODAL EDITOR) */}
+          {/* TAB 5: GYM PLÄNE (A/B/C CRUD EDITOR) */}
           {activeTab === "gym" && (
             <div className="space-y-6 max-w-6xl mx-auto">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-zinc-100">Gym Pläne A, B & C</h3>
                   <p className="text-xs text-zinc-400">
-                    Mechanische Spannung, saubere RIR-Vorgaben und gezielte ZNS-Schonung fürs Ausdauertraining.
+                    Mechanische Spannung, saubere RIR-Vorgaben und ZNS-Schonung fürs Ausdauertraining.
                   </p>
                 </div>
               </div>
@@ -977,7 +1301,6 @@ export function DashboardApp() {
                         </span>
                       </div>
 
-                      {/* Detail Table */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                           <thead>
@@ -1028,9 +1351,102 @@ export function DashboardApp() {
           )}
         </div>
 
+        {/* ACTIVITY DETAIL MODAL */}
+        {selectedActivity && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-zinc-100">{selectedActivity.name}</span>
+                  {selectedActivity.isCommute && (
+                    <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
+                      Auto-Commute
+                    </span>
+                  )}
+                </div>
+                <button onClick={() => setSelectedActivity(null)} className="text-zinc-400 hover:text-white">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
+                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                  <span className="text-zinc-500 block">Dauer</span>
+                  <span className="text-sm font-bold text-zinc-200">{Math.round(selectedActivity.durationSec / 60)} min</span>
+                </div>
+                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                  <span className="text-zinc-500 block">Distanz</span>
+                  <span className="text-sm font-bold text-zinc-200">{(selectedActivity.distanceM / 1000).toFixed(2)} km</span>
+                </div>
+                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                  <span className="text-zinc-500 block">Herzfrequenz</span>
+                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.avgHr} / {selectedActivity.maxHr} bpm</span>
+                </div>
+                {selectedActivity.avgPowerW ? (
+                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                    <span className="text-zinc-500 block">Leistung (Watt)</span>
+                    <span className="text-sm font-bold text-emerald-400">{selectedActivity.avgPowerW}W (NP: {selectedActivity.normalizedPowerW || selectedActivity.avgPowerW}W)</span>
+                  </div>
+                ) : null}
+                {selectedActivity.avgPaceSecPerKm ? (
+                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                    <span className="text-zinc-500 block">Pace</span>
+                    <span className="text-sm font-bold text-amber-400">{formatPace(selectedActivity.avgPaceSecPerKm)}</span>
+                  </div>
+                ) : null}
+                {selectedActivity.swolf ? (
+                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                    <span className="text-zinc-500 block">SWOLF</span>
+                    <span className="text-sm font-bold text-cyan-400">{selectedActivity.swolf}</span>
+                  </div>
+                ) : null}
+                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                  <span className="text-zinc-500 block">TSS & IF</span>
+                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.tss} TSS ({selectedActivity.intensityFactor || "--"} IF)</span>
+                </div>
+                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                  <span className="text-zinc-500 block">Kalorien</span>
+                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.calories} kcal</span>
+                </div>
+                {selectedActivity.elevationGainM > 0 && (
+                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
+                    <span className="text-zinc-500 block">Höhenmeter</span>
+                    <span className="text-sm font-bold text-zinc-200">{Math.round(selectedActivity.elevationGainM)}m</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Gym Linker in Modal */}
+              {selectedActivity.sportType === "gym" && (
+                <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+                  <span className="text-xs text-zinc-400">Gym-Plan zuweisen:</span>
+                  <div className="flex gap-1.5">
+                    {gymTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          handleAssignGym(selectedActivity.activityId, t.id);
+                          setSelectedActivity({ ...selectedActivity, linkedGymTemplateId: t.id });
+                        }}
+                        className={`px-3 py-1 text-xs rounded font-mono font-bold transition-colors ${
+                          selectedActivity.linkedGymTemplateId === t.id
+                            ? "bg-violet-600 text-white"
+                            : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                        }`}
+                      >
+                        Plan {t.code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* GYM PLAN EDITOR MODAL */}
         {editingPlan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
             <div className="w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
                 <h3 className="text-sm font-bold text-zinc-100">
@@ -1177,25 +1593,25 @@ export function DashboardApp() {
           </div>
         )}
 
-        {/* MOBILE NAVIGATION BAR */}
+        {/* MOBILE NAVIGATION BAR (5 TABS) */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-lg flex items-center justify-around px-2 z-50">
           <button
-            onClick={() => setActiveTab("today")}
+            onClick={() => setActiveTab("briefing")}
             className={`flex flex-col items-center gap-1 p-2 rounded-lg text-[10px] font-medium transition-colors ${
-              activeTab === "today" ? "text-emerald-400" : "text-zinc-400"
+              activeTab === "briefing" ? "text-emerald-400" : "text-zinc-400"
             }`}
           >
             <ActivityIcon className="h-4 w-4" />
-            Heute
+            Briefing
           </button>
           <button
-            onClick={() => setActiveTab("planner")}
+            onClick={() => setActiveTab("analytics")}
             className={`flex flex-col items-center gap-1 p-2 rounded-lg text-[10px] font-medium transition-colors ${
-              activeTab === "planner" ? "text-sky-400" : "text-zinc-400"
+              activeTab === "analytics" ? "text-sky-400" : "text-zinc-400"
             }`}
           >
-            <Calendar className="h-4 w-4" />
-            Planer
+            <BarChart3 className="h-4 w-4" />
+            Analytics
           </button>
           <button
             onClick={() => setActiveTab("chat")}
@@ -1204,7 +1620,16 @@ export function DashboardApp() {
             }`}
           >
             <Sparkles className="h-4 w-4" />
-            AI Coach
+            Coach
+          </button>
+          <button
+            onClick={() => setActiveTab("planner")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-lg text-[10px] font-medium transition-colors ${
+              activeTab === "planner" ? "text-teal-400" : "text-zinc-400"
+            }`}
+          >
+            <Calendar className="h-4 w-4" />
+            Planer
           </button>
           <button
             onClick={() => setActiveTab("gym")}

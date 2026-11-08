@@ -21,6 +21,10 @@ export const athleteProfile = pgTable("athlete_profile", {
   swimCssPaceSec: integer("swim_css_pace_sec").default(95), // sec per 100m
   runThresholdPaceSec: integer("run_threshold_pace_sec").default(255), // sec per km (e.g. 4:15 min/km)
   weightKg: real("weight_kg").default(72.5),
+  setupCompleted: boolean("setup_completed").default(false).notNull(),
+  coachMemoryJson: jsonb("coach_memory_json"), // Goals, schedule, strengths/weaknesses, injuries, setup notes
+  locationLat: real("location_lat").default(52.56),
+  locationLon: real("location_lon").default(13.09),
   intervalsIcuId: text("intervals_icu_id"),
   intervalsIcuApiKey: text("intervals_icu_api_key"),
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
@@ -57,8 +61,8 @@ export const activities = pgTable("activities", {
   maxHr: integer("max_hr"),
   avgPowerW: integer("avg_power_w"),
   normalizedPowerW: integer("normalized_power_w"),
-  avgCadence: integer("avg_cadence"), // running cadence or cycling cadence
-  avgPaceSecPerKm: integer("avg_pace_sec_per_km"), // for running
+  avgCadence: integer("avg_cadence"),
+  avgPaceSecPerKm: integer("avg_pace_sec_per_km"),
   tss: real("tss"),
   intensityFactor: real("intensity_factor"),
   avgSpeedMps: real("avg_speed_mps"),

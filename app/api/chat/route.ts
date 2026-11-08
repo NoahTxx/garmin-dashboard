@@ -7,6 +7,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import {
   getAthleteProfile,
+  updateAthleteProfile,
   getDailyMetrics,
   getActivities,
   getGymTemplates,
@@ -17,7 +18,7 @@ import {
 } from "@/lib/store";
 import { generateZwoXml, pushWorkoutToIntervalsIcu } from "@/lib/zwift";
 
-export const maxDuration = 45;
+export const maxDuration = 60;
 
 function getAiModel() {
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
@@ -36,8 +37,14 @@ export async function POST(req: Request) {
     const hasKey = Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.ANTHROPIC_API_KEY);
 
     if (!hasKey) {
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content || "";
-      const lower = typeof lastUserMsg === "string" ? lastUserMsg.toLowerCase() : "";
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      let text = "";
+      if (typeof lastUserMsg?.content === "string") {
+        text = lastUserMsg.content;
+      } else if (Array.isArray(lastUserMsg?.content)) {
+        text = lastUserMsg.content.map((p: any) => p.text || "").join(" ");
+      }
+      const lower = text.toLowerCase();
 
       let reply = "";
 
@@ -49,9 +56,10 @@ export async function POST(req: Request) {
 
       if (userExplicitlyRequestedPlan) {
         reply = "Verstanden! Basierend auf deinen aktuellen Werten (Readiness 89, HRV 73ms, Schlaf 88) habe ich deinen Wochenplan aktualisiert:\n- Heute: 4x4min VO2max Intervalle auf Zwift (328W).\n- Morgen: Gym Plan B (Oberkörper & Lats).\n- Übermorgen: 12km Zone-2 Grundlagenlauf (5:10 min/km).\nDie Workouts sind im Wochenplaner hinterlegt.";
+      } else if (lower.includes("gym") || lower.includes("plan") || lower.includes("screenshot") || lower.includes("setup")) {
+        reply = "Ich habe deine Gym-Pläne analysiert:\n- Plan A: Beine / Knie-Dominanz (Squats, RDLs, Waden). Optimal vor Zone-1 oder Ruhetagen.\n- Plan B: Oberkörper & Schwimm-Spezifisch (Klimmzüge, Schrägbank, Face Pulls). Sehr geringe Interferenz mit dem Radtraining.\n- Plan C: Posterior Chain & Anti-Rotation (Trap Bar, Hip Thrusts, Pallof Press).\n\nMöchtest du diese Pläne so dauerhaft als Plan A, B und C speichern und dein Setup abschließen? Antworte mit 'Speichern und Setup abschließen'.";
       } else {
-        // Strict diagnostic & onboarding mode
-        reply = "Willkommen im Performance & AI Coach System.\n\nIch sehe deine aktuellen Garmin-Metriken (HRV 73ms, Schlaf 88, Readiness 89), generiere aber bewusst noch keine Workouts oder Pläne ohne dein klares Briefing.\n\nUm dein Training physiologisch exakt aufzusetzen, beantworte mir bitte kurz:\n1. Was ist dein primäres Hauptziel (z.B. FTP-Steigerung, Halbmarathon, Hyrox/Triathlon oder Hypertrophie)?\n2. Wie viele Wochenstunden Trainingszeit hast du realistisch zur Verfügung?\n3. An welchen Wochentagen möchtest du deine 2 Gym-Einheiten (Plan A/B/C) einbauen?\n\nSobald du bereit bist, sag mir einfach 'Plane meine Woche' oder 'Erstelle mir jetzt eine Einheit'.";
+        reply = "Willkommen im Performance & AI Coach System (Setup-Phase).\n\nIch sehe deine aktuellen Garmin-Metriken, generiere aber bewusst noch keine Workouts ohne dein Briefing.\n\nSo schließen wir dein Setup sauber ab:\n1. Schicke mir Screenshots oder Text deiner 3 Gym-Pläne (Plan A, B, C).\n2. Nenne mir deine aktuellen Eckdaten (FTP, 10k-Laufzeit, CSS-Pace) sowie dein Wochen-Zeitbudget.\n3. Sobald alles abgestimmt ist, speichere ich dein Profil dauerhaft ab.";
       }
 
       return new Response(reply, {
@@ -61,29 +69,46 @@ export async function POST(req: Request) {
 
     const model = getAiModel();
 
-    const systemPrompt = `Du bist ein präziser, wissenschaftlich arbeitender Performance & AI Ausdauer- und Kraft-Coach.
-DEIN VERHALTEN & STRIKTE REGELN (SEHR WICHTIG):
-1. ONBOARDING & KENNENLERN-MODUS:
-   - Du generierst KEINE ungefragten Workouts oder Wochenpläne!
-   - Du schreibst NICHT eigenmächtig in 'planned_workouts', bevor der Athlet nicht explizit darum gebeten hat.
-   - Solange der Athlet Fragen stellt oder sich im Kennenlerngespräch befindet, agierst du ausschließlich als analytischer Diagnostiker.
-   - Frage strukturiert nach aktuellem Leistungsstand, sportlichen Zielen, Wochen-Zeitbudget und Präferenzen für Rad, Laufen, Schwimmen und Gym.
-2. NUR BEI EXPLIZITEM BEFEHL TOOLS NUTZEN:
-   - Erst wenn der Nutzer explizit schreibt: "Erstelle mir jetzt eine Einheit", "Plane meine Woche" oder "Trage das Training ein", nutzt du die Tools 'upsert_planned_workout', 'clear_day_workout' oder 'generate_and_sync_zwift_workout'.
-3. TRAININGSLEHRE:
-   - Rad/Lauf: Polarized / Pyramidal (80% Z1/Z2, 20% Schwellen/VO2max). Laufen in min/km Pace steuern.
-   - Gym: Mechanische Spannung, RIR 1-2, Interferenz mit Beintraining strikt vermeiden (48h Abstand vor harten Intervallen).
-   - Commute: Fahrten ohne Wattwerte (is_commute = true) zählen nie als strukturierte Trainingslast.
+    // Transform messages to support image parts if sent as base64 data URLs
+    const formattedMessages = messages.map((m: any) => {
+      if (typeof m.content === "string") return m;
+      if (Array.isArray(m.content)) {
+        return {
+          role: m.role,
+          content: m.content.map((part: any) => {
+            if (part.type === "image" && part.image) {
+              return { type: "image", image: part.image };
+            }
+            return { type: "text", text: part.text || "" };
+          }),
+        };
+      }
+      return m;
+    });
+
+    const systemPrompt = `Du bist ein weltklasse Performance- und Ausdauer-/Kraft-Coach.
+DEIN VERHALTEN & STRIKTE SETUP-REGELN:
+1. SETUP-MODUS (wenn setupCompleted = false):
+   - Generiere NIEMALS ungefragt Workouts oder Pläne!
+   - Begrüße den Athleten kurz, frage nach seinen aktuellen Leistungsdaten (Rad-FTP, Lauf-Pace, CSS Schwimmen) und bitte um Screenshots/Fotos seiner 3 Gym-Pläne (Plan A, B, C).
+   - Wenn der Athlet Bilder/Screenshots von Gym-Plänen sendet, nutze deine Vision-Fähigkeit: Lies alle Übungen, Sätze, Wiederholungen und RIR präzise aus.
+   - Bewerte die Pläne trainingswissenschaftlich (Hypertrophie nach mechanischer Spannung, RIR 1-2, Vermeidung von ZNS-Überlastung, Vermeidung von Interferenz mit schweren Beintagen vor Radintervallen).
+   - Schlage sinnvolle Verbesserungen vor und speichere die Pläne nach Bestätigung via 'save_or_update_gym_template' als Plan A, B und C.
+   - Sobald die Eckdaten und Pläne abgestimmt sind, rufe 'update_athlete_setup_and_memory' auf, um die Ziele, Termine und Schwellen dauerhaft im Profil zu verankern und 'setup_completed = true' zu setzen!
+2. NUR BEI EXPLIZITEM BEFEHL WORKOUTS GENERIEREN:
+   - Erst wenn der Nutzer explizit schreibt: "Erstelle mir jetzt eine Einheit" oder "Plane meine Woche", rufst du 'upsert_planned_workout' oder 'generate_and_sync_zwift_workout' auf.
+3. COMMUTE:
+   - Fahrten ohne Wattwerte (is_commute = true) sind reines Alltags-Pendeln und fließen nicht in die Trainingslast ein.
 4. TONFALL:
-   - Direkt, professionell, klar strukturiert. Keine überflüssigen Floskeln.`;
+   - Direkt, fachlich präzise, aktiv. Keine ungefragten akademischen Vorlesungen.`;
 
     const result = streamText({
       model,
       system: systemPrompt,
-      messages,
+      messages: formattedMessages,
       tools: {
         get_full_context: tool({
-          description: "Liest das Profil, die letzten 14 Tage Garmin Metriken, Aktivitäten, Gym-Pläne und geplante Workouts.",
+          description: "Liest das Athletenprofil (inkl. Setup-Status & Memory), 14 Tage Garmin-Metriken, Aktivitäten, Gym-Pläne und geplante Workouts.",
           inputSchema: z.object({}),
           execute: async () => {
             const [profile, metrics, acts, gymTemplatesList, workouts] = await Promise.all([
@@ -105,8 +130,70 @@ DEIN VERHALTEN & STRIKTE REGELN (SEHR WICHTIG):
           },
         }),
 
+        update_athlete_setup_and_memory: tool({
+          description: "Speichert Ziele, feste Zeiten, Stärken/Schwächen, Schwellenwerte und markiert das Setup als abgeschlossen.",
+          inputSchema: z.object({
+            setupCompleted: z.boolean().default(true),
+            ftp: z.number().optional(),
+            lthr: z.number().optional(),
+            maxHr: z.number().optional(),
+            restingHr: z.number().optional(),
+            runThresholdPaceSec: z.number().optional(),
+            swimCssPaceSec: z.number().optional(),
+            coachMemory: z.object({
+              primaryGoal: z.string(),
+              weeklyBudgetHours: z.number(),
+              preferredGymDays: z.array(z.string()).optional(),
+              notes: z.string().optional(),
+              strengths: z.array(z.string()).optional(),
+              limiters: z.array(z.string()).optional(),
+            }),
+          }),
+          execute: async (args) => {
+            const updates: any = {
+              setupCompleted: args.setupCompleted,
+              coachMemoryJson: args.coachMemory,
+            };
+            if (args.ftp) updates.currentFtpW = args.ftp;
+            if (args.lthr) updates.lthr = args.lthr;
+            if (args.maxHr) updates.maxHr = args.maxHr;
+            if (args.restingHr) updates.restingHr = args.restingHr;
+            if (args.runThresholdPaceSec) updates.runThresholdPaceSec = args.runThresholdPaceSec;
+            if (args.swimCssPaceSec) updates.swimCssPaceSec = args.swimCssPaceSec;
+
+            const res = await updateAthleteProfile(updates);
+            return { success: true, profile: res };
+          },
+        }),
+
+        save_or_update_gym_template: tool({
+          description: "Speichert oder aktualisiert einen Gym-Plan (Code A, B oder C) in der Datenbank.",
+          inputSchema: z.object({
+            code: z.enum(["A", "B", "C"]),
+            name: z.string(),
+            focusMuscles: z.string(),
+            estimatedCnsFatigue: z.number().min(1).max(10),
+            exercisesJson: z.array(
+              z.object({
+                name: z.string(),
+                muscleGroup: z.string().optional(),
+                sets: z.number(),
+                reps: z.string(),
+                rir: z.number(),
+                restSec: z.number().optional(),
+                weightKg: z.string().optional(),
+                note: z.string().optional(),
+              })
+            ),
+          }),
+          execute: async (params) => {
+            const res = await saveOrUpdateGymTemplate(params);
+            return { success: true, template: res };
+          },
+        }),
+
         upsert_planned_workout: tool({
-          description: "NUR AUF EXPLIZITE AUFFORDERUNG: Plant oder aktualisiert ein Training für ein Datum.",
+          description: "NUR AUF EXPLIZITE AUFFORDERUNG: Plant oder aktualisiert ein Training.",
           inputSchema: z.object({
             date: z.string().describe("Datum im Format YYYY-MM-DD"),
             slotIndex: z.number().default(1),
@@ -143,32 +230,6 @@ DEIN VERHALTEN & STRIKTE REGELN (SEHR WICHTIG):
           execute: async ({ date, slotIndex }) => {
             const res = await clearDayWorkout(date, slotIndex || 1);
             return res;
-          },
-        }),
-
-        save_or_update_gym_template: tool({
-          description: "Speichert oder aktualisiert einen Gym-Plan (A, B oder C).",
-          inputSchema: z.object({
-            code: z.enum(["A", "B", "C"]),
-            name: z.string(),
-            focusMuscles: z.string(),
-            estimatedCnsFatigue: z.number().min(1).max(10),
-            exercisesJson: z.array(
-              z.object({
-                name: z.string(),
-                muscleGroup: z.string().optional(),
-                sets: z.number(),
-                reps: z.string(),
-                rir: z.number(),
-                restSec: z.number().optional(),
-                weightKg: z.string().optional(),
-                note: z.string().optional(),
-              })
-            ),
-          }),
-          execute: async (params) => {
-            const res = await saveOrUpdateGymTemplate(params);
-            return { success: true, template: res };
           },
         }),
 

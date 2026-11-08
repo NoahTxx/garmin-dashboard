@@ -46,6 +46,10 @@ export async function getAthleteProfile(): Promise<MockAthleteProfile> {
           swimCssPaceSec: r.swimCssPaceSec ?? 95,
           runThresholdPaceSec: r.runThresholdPaceSec ?? 255,
           weightKg: r.weightKg ?? 72,
+          setupCompleted: r.setupCompleted ?? false,
+          coachMemoryJson: r.coachMemoryJson,
+          locationLat: r.locationLat ?? 52.56,
+          locationLon: r.locationLon ?? 13.09,
           intervalsIcuId: r.intervalsIcuId,
           intervalsIcuApiKey: r.intervalsIcuApiKey,
           lastSyncAt: r.lastSyncAt ? r.lastSyncAt.toISOString() : new Date().toISOString(),
@@ -62,17 +66,25 @@ export async function updateAthleteProfile(updates: Partial<MockAthleteProfile>)
   Object.assign(globalStore.profile, updates);
   if (db) {
     try {
-      await db
-        .update(athleteProfile)
-        .set({
-          currentFtpW: updates.currentFtpW,
-          maxHr: updates.maxHr,
-          restingHr: updates.restingHr,
-          lthr: updates.lthr,
-          weightKg: updates.weightKg,
-          lastSyncAt: new Date(),
-        })
-        .where(eq(athleteProfile.id, 1));
+      const setObj: any = { lastSyncAt: new Date() };
+      if (updates.currentFtpW !== undefined) setObj.currentFtpW = updates.currentFtpW;
+      if (updates.maxHr !== undefined) setObj.maxHr = updates.maxHr;
+      if (updates.restingHr !== undefined) setObj.restingHr = updates.restingHr;
+      if (updates.lthr !== undefined) setObj.lthr = updates.lthr;
+      if (updates.swimCssPaceSec !== undefined) setObj.swimCssPaceSec = updates.swimCssPaceSec;
+      if (updates.runThresholdPaceSec !== undefined) setObj.runThresholdPaceSec = updates.runThresholdPaceSec;
+      if (updates.weightKg !== undefined) setObj.weightKg = updates.weightKg;
+      if (updates.setupCompleted !== undefined) setObj.setupCompleted = updates.setupCompleted;
+      if (updates.coachMemoryJson !== undefined) setObj.coachMemoryJson = updates.coachMemoryJson;
+      if (updates.locationLat !== undefined) setObj.locationLat = updates.locationLat;
+      if (updates.locationLon !== undefined) setObj.locationLon = updates.locationLon;
+
+      const existing = await db.select().from(athleteProfile).limit(1);
+      if (existing.length > 0) {
+        await db.update(athleteProfile).set(setObj).where(eq(athleteProfile.id, existing[0].id));
+      } else {
+        await db.insert(athleteProfile).values({ id: 1, ...setObj });
+      }
     } catch (e) {
       console.warn("DB update athleteProfile fallback:", e);
     }

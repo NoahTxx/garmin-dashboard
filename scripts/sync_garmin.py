@@ -13,6 +13,12 @@ import base64
 import datetime
 from typing import Optional, Dict, Any, List
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env.local")
+except Exception:
+    pass
+
 def init_garmin_client(token_raw: str):
     import garminconnect
     token_str = token_raw.strip().strip('"').strip("'")
