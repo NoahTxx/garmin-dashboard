@@ -1,0 +1,4 @@
+{
+  "$schema": "https://schema.railpack.dev",
+  "provider": "node"
+}
