@@ -57,7 +57,7 @@ export interface MockDailyMetric {
 export interface MockActivity {
   activityId: string;
   name: string;
-  sportType: "road_cycling" | "zwift" | "running" | "commute" | "swimming" | "gym" | "other";
+  sportType: "road_cycling" | "zwift" | "running" | "commute" | "swimming" | "gym" | "recovery" | "other";
   isCommute: boolean;
   startTime: string;
   durationSec: number;
@@ -77,6 +77,7 @@ export interface MockActivity {
   calories: number;
   linkedGymTemplateId: number | null;
   muscleLoadTags?: string[];
+  rawJson?: any;
 }
 
 export interface MockPlannedWorkout {

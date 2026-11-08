@@ -23,8 +23,8 @@ export const athleteProfile = pgTable("athlete_profile", {
   weightKg: real("weight_kg").default(72.5),
   setupCompleted: boolean("setup_completed").default(false).notNull(),
   coachMemoryJson: jsonb("coach_memory_json"), // Goals, schedule, strengths/weaknesses, injuries, setup notes
-  locationLat: real("location_lat").default(52.56),
-  locationLon: real("location_lon").default(13.09),
+  locationLat: real("location_lat").default(52.5584),
+  locationLon: real("location_lon").default(13.0914),
   intervalsIcuId: text("intervals_icu_id"),
   intervalsIcuApiKey: text("intervals_icu_api_key"),
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),

@@ -37,6 +37,8 @@ import {
   PieChart,
   ShieldCheck,
   Check,
+  Smile,
+  Compass,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -129,7 +131,7 @@ export function DashboardApp() {
 
       const [dashRes, weatherRes] = await Promise.all([
         fetch("/api/dashboard"),
-        fetch("/api/weather?lat=52.56&lon=13.09"),
+        fetch("/api/weather?lat=52.5584&lon=13.0914"),
       ]);
 
       if (dashRes.ok) {
@@ -638,7 +640,7 @@ export function DashboardApp() {
                         <Droplets className="h-3 w-3" /> {weather ? weather.current.precipProb : 10}% Regen
                       </span>
                       <span>•</span>
-                      <span>Potsdam / Berlin</span>
+                      <span className="text-zinc-300 font-semibold">Falkensee</span>
                     </div>
                   </div>
                 </div>
@@ -822,52 +824,187 @@ export function DashboardApp() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {filteredActivities.slice(0, 4).map((act) => (
-                      <div
-                        key={act.activityId}
-                        onClick={() => setSelectedActivity(act)}
-                        className="rounded-xl border border-zinc-800/80 bg-zinc-950/60 p-3.5 flex items-center justify-between cursor-pointer hover:border-zinc-700 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
-                              act.sportType === "running"
-                                ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                                : act.sportType === "swimming"
-                                ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
-                                : act.sportType === "gym"
-                                ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
-                                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                            }`}
-                          >
-                            {act.sportType === "running" ? (
-                              <Footprints className="h-4 w-4" />
-                            ) : act.sportType === "swimming" ? (
-                              <Waves className="h-4 w-4" />
-                            ) : act.sportType === "gym" ? (
-                              <Dumbbell className="h-4 w-4" />
-                            ) : (
-                              <Bike className="h-4 w-4" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {filteredActivities.slice(0, 4).map((act) => {
+                      const dateObj = new Date(act.startTime);
+                      const dateStr = !isNaN(dateObj.getTime())
+                        ? `${dateObj.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} • ${dateObj.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`
+                        : "";
+                      const speedKmH = act.avgSpeedMps ? (act.avgSpeedMps * 3.6).toFixed(1) : null;
+                      const swimPace100m = act.distanceM > 0 && act.durationSec > 0
+                        ? `${Math.floor((act.durationSec / (act.distanceM / 100)) / 60)}:${Math.floor((act.durationSec / (act.distanceM / 100)) % 60).toString().padStart(2, "0")} /100m`
+                        : null;
+
+                      return (
+                        <div
+                          key={act.activityId}
+                          onClick={() => setSelectedActivity(act)}
+                          className="rounded-xl border border-zinc-800/80 bg-zinc-950/70 p-4 flex flex-col justify-between cursor-pointer hover:border-zinc-700 hover:bg-zinc-900/60 transition-all shadow-sm group"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                                    act.sportType === "running"
+                                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                      : act.sportType === "swimming"
+                                      ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
+                                      : act.sportType === "gym"
+                                      ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
+                                      : act.sportType === "recovery"
+                                      ? "border-teal-500/30 bg-teal-500/10 text-teal-300"
+                                      : act.sportType === "commute"
+                                      ? "border-zinc-700 bg-zinc-800/60 text-zinc-400"
+                                      : act.sportType === "other"
+                                      ? "border-zinc-700 bg-zinc-800/60 text-zinc-300"
+                                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                                  }`}
+                                >
+                                  {act.sportType === "running" ? (
+                                    <Footprints className="h-4 w-4" />
+                                  ) : act.sportType === "swimming" ? (
+                                    <Waves className="h-4 w-4" />
+                                  ) : act.sportType === "gym" ? (
+                                    <Dumbbell className="h-4 w-4" />
+                                  ) : act.sportType === "recovery" ? (
+                                    <Wind className="h-4 w-4" />
+                                  ) : act.sportType === "other" ? (
+                                    <ActivityIcon className="h-4 w-4" />
+                                  ) : (
+                                    <Bike className="h-4 w-4" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full uppercase font-semibold ${
+                                        act.sportType === "running"
+                                          ? "bg-amber-500/15 text-amber-300"
+                                          : act.sportType === "swimming"
+                                          ? "bg-cyan-500/15 text-cyan-300"
+                                          : act.sportType === "gym"
+                                          ? "bg-violet-500/15 text-violet-300"
+                                          : act.sportType === "recovery"
+                                          ? "bg-teal-500/15 text-teal-300"
+                                          : act.sportType === "commute"
+                                          ? "bg-zinc-800 text-zinc-400"
+                                          : act.sportType === "other"
+                                          ? "bg-zinc-800 text-zinc-300"
+                                          : "bg-emerald-500/15 text-emerald-300"
+                                      }`}
+                                    >
+                                      {act.sportType === "road_cycling"
+                                        ? "Rennrad"
+                                        : act.sportType === "zwift"
+                                        ? "Zwift"
+                                        : act.sportType === "commute"
+                                        ? "Pendeln"
+                                        : act.sportType === "running"
+                                        ? "Laufen"
+                                        : act.sportType === "swimming"
+                                        ? "Schwimmen"
+                                        : act.sportType === "gym"
+                                        ? "Gym"
+                                        : act.sportType === "recovery"
+                                        ? "Recovery"
+                                        : "Aktivität"}
+                                    </span>
+                                    {act.isCommute && act.sportType !== "commute" && (
+                                      <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.2 rounded font-mono">
+                                        Commute
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-zinc-500 font-mono block mt-0.5">{dateStr}</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-zinc-600 group-hover:text-zinc-300 transition-colors shrink-0" />
+                            </div>
+
+                            <h5 className="text-sm font-semibold text-zinc-100 line-clamp-2 leading-snug">
+                              {act.name}
+                            </h5>
+                          </div>
+
+                          {/* Sport-specific Core Metrics Bar */}
+                          <div className="mt-3 pt-2.5 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono">
+                            <span className="text-zinc-300 font-semibold">{Math.round(act.durationSec / 60)} min</span>
+
+                            {/* Cycling */}
+                            {(act.sportType === "road_cycling" || act.sportType === "zwift") && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                <span className="text-emerald-400 font-semibold">
+                                  {act.avgPowerW ? `${act.avgPowerW}W` : ""}
+                                </span>
+                                <span>{(act.distanceM / 1000).toFixed(1)} km</span>
+                                {speedKmH && <span>{speedKmH} km/h</span>}
+                                {act.avgHr && <span>{act.avgHr} bpm</span>}
+                              </div>
+                            )}
+
+                            {/* Commute */}
+                            {act.sportType === "commute" && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                <span>{(act.distanceM / 1000).toFixed(1)} km</span>
+                                {speedKmH && <span>{speedKmH} km/h</span>}
+                                {act.avgHr && <span>{act.avgHr} bpm</span>}
+                              </div>
+                            )}
+
+                            {/* Running */}
+                            {act.sportType === "running" && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                <span className="text-amber-400 font-semibold">
+                                  {formatPace(act.avgPaceSecPerKm)}
+                                </span>
+                                <span>{(act.distanceM / 1000).toFixed(1)} km</span>
+                                {act.avgHr && <span>{act.avgHr} bpm</span>}
+                              </div>
+                            )}
+
+                            {/* Swimming */}
+                            {act.sportType === "swimming" && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                <span className="text-cyan-400 font-semibold">{Math.round(act.distanceM)} m</span>
+                                {swimPace100m && <span>{swimPace100m}</span>}
+                                {act.swolf && <span>SWOLF {act.swolf}</span>}
+                              </div>
+                            )}
+
+                            {/* Gym */}
+                            {act.sportType === "gym" && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                {act.avgHr && <span>Ø {act.avgHr} bpm</span>}
+                                {act.calories > 0 && <span>{act.calories} kcal</span>}
+                                {act.linkedGymTemplateId ? (
+                                  <span className="text-violet-400 font-semibold">Plan verknüpft</span>
+                                ) : (
+                                  <span className="text-zinc-500">Kein Plan</span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Recovery / Breathwork */}
+                            {act.sportType === "recovery" && (
+                              <div className="flex items-center gap-2 text-teal-300">
+                                {act.avgHr && <span>Ø {act.avgHr} bpm</span>}
+                                {act.maxHr && <span>Max {act.maxHr}</span>}
+                                <span>Atem / Ruhe</span>
+                              </div>
+                            )}
+
+                            {/* Other */}
+                            {act.sportType === "other" && (
+                              <div className="flex items-center gap-2 text-zinc-400">
+                                {act.distanceM > 0 && <span>{(act.distanceM / 1000).toFixed(1)} km</span>}
+                                {act.avgHr && <span>{act.avgHr} bpm</span>}
+                              </div>
                             )}
                           </div>
-                          <div>
-                            <span className="text-xs font-semibold text-zinc-200 block truncate max-w-[200px]">
-                              {act.name}
-                            </span>
-                            <span className="text-[11px] text-zinc-400 font-mono">
-                              {Math.round(act.durationSec / 60)} min •{" "}
-                              {act.sportType === "running" && act.avgPaceSecPerKm
-                                ? formatPace(act.avgPaceSecPerKm)
-                                : act.avgPowerW
-                                ? `${act.avgPowerW} W`
-                                : `${(act.distanceM / 1000).toFixed(1)} km`}
-                            </span>
-                          </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-zinc-500" />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1353,74 +1490,212 @@ export function DashboardApp() {
 
         {/* ACTIVITY DETAIL MODAL */}
         {selectedActivity && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-            <div className="w-full max-w-xl rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-zinc-100">{selectedActivity.name}</span>
-                  {selectedActivity.isCommute && (
-                    <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
-                      Auto-Commute
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <div className="w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/95 p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between border-b border-zinc-800 pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full uppercase font-semibold ${
+                        selectedActivity.sportType === "running"
+                          ? "bg-amber-500/15 text-amber-300"
+                          : selectedActivity.sportType === "swimming"
+                          ? "bg-cyan-500/15 text-cyan-300"
+                          : selectedActivity.sportType === "gym"
+                          ? "bg-violet-500/15 text-violet-300"
+                          : selectedActivity.sportType === "recovery"
+                          ? "bg-teal-500/15 text-teal-300"
+                          : selectedActivity.sportType === "commute"
+                          ? "bg-zinc-800 text-zinc-400"
+                          : selectedActivity.sportType === "other"
+                          ? "bg-zinc-800 text-zinc-300"
+                          : "bg-emerald-500/15 text-emerald-300"
+                      }`}
+                    >
+                      {selectedActivity.sportType === "road_cycling"
+                        ? "Rennrad"
+                        : selectedActivity.sportType === "zwift"
+                        ? "Zwift"
+                        : selectedActivity.sportType === "commute"
+                        ? "Pendeln"
+                        : selectedActivity.sportType === "running"
+                        ? "Laufen"
+                        : selectedActivity.sportType === "swimming"
+                        ? "Schwimmen"
+                        : selectedActivity.sportType === "gym"
+                        ? "Gym"
+                        : selectedActivity.sportType === "recovery"
+                        ? "Recovery"
+                        : "Aktivität"}
                     </span>
-                  )}
+                    {selectedActivity.isCommute && (
+                      <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded font-mono">
+                        Auto-Commute (Nicht im Load)
+                      </span>
+                    )}
+                    <span className="text-xs text-zinc-500 font-mono">
+                      ID: {selectedActivity.activityId}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-zinc-100">{selectedActivity.name}</h3>
+                  <span className="text-xs text-zinc-400 font-mono">
+                    {new Date(selectedActivity.startTime).toLocaleString("de-DE", {
+                      weekday: "short",
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
                 </div>
-                <button onClick={() => setSelectedActivity(null)} className="text-zinc-400 hover:text-white">
+                <button
+                  onClick={() => setSelectedActivity(null)}
+                  className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
-                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                  <span className="text-zinc-500 block">Dauer</span>
-                  <span className="text-sm font-bold text-zinc-200">{Math.round(selectedActivity.durationSec / 60)} min</span>
+              {/* Bento Grid Telemetrie */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                  <span className="text-zinc-500 block text-[10px] uppercase">Dauer</span>
+                  <span className="text-base font-bold text-zinc-100 mt-0.5 block">
+                    {Math.round(selectedActivity.durationSec / 60)} min
+                  </span>
+                  <span className="text-[10px] text-zinc-500">{selectedActivity.durationSec}s netto</span>
                 </div>
-                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                  <span className="text-zinc-500 block">Distanz</span>
-                  <span className="text-sm font-bold text-zinc-200">{(selectedActivity.distanceM / 1000).toFixed(2)} km</span>
+
+                {selectedActivity.sportType !== "gym" && selectedActivity.sportType !== "recovery" ? (
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Distanz</span>
+                    <span className="text-base font-bold text-zinc-100 mt-0.5 block">
+                      {selectedActivity.sportType === "swimming"
+                        ? `${Math.round(selectedActivity.distanceM)} m`
+                        : `${(selectedActivity.distanceM / 1000).toFixed(2)} km`}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {selectedActivity.avgSpeedMps ? `${(selectedActivity.avgSpeedMps * 3.6).toFixed(1)} km/h Ø` : "--"}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Kategorie</span>
+                    <span className="text-base font-bold text-teal-300 mt-0.5 block">
+                      {selectedActivity.sportType === "gym" ? "Kraft / Hypertrophie" : "Atem & Entspannung"}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">Keine Distanz</span>
+                  </div>
+                )}
+
+                <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                  <span className="text-zinc-500 block text-[10px] uppercase">Herzfrequenz</span>
+                  <span className="text-base font-bold text-rose-400 mt-0.5 block">
+                    {selectedActivity.avgHr ? `${selectedActivity.avgHr} bpm` : "--"}
+                  </span>
+                  <span className="text-[10px] text-zinc-500">
+                    Max: {selectedActivity.maxHr ? `${selectedActivity.maxHr} bpm` : "--"}
+                  </span>
                 </div>
-                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                  <span className="text-zinc-500 block">Herzfrequenz</span>
-                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.avgHr} / {selectedActivity.maxHr} bpm</span>
+
+                <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                  <span className="text-zinc-500 block text-[10px] uppercase">Kalorien</span>
+                  <span className="text-base font-bold text-amber-400 mt-0.5 block">
+                    {selectedActivity.calories ? `${selectedActivity.calories} kcal` : "--"}
+                  </span>
+                  <span className="text-[10px] text-zinc-500">Verbrauch</span>
                 </div>
+
+                {/* Second Row */}
                 {selectedActivity.avgPowerW ? (
-                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                    <span className="text-zinc-500 block">Leistung (Watt)</span>
-                    <span className="text-sm font-bold text-emerald-400">{selectedActivity.avgPowerW}W (NP: {selectedActivity.normalizedPowerW || selectedActivity.avgPowerW}W)</span>
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Leistung</span>
+                    <span className="text-base font-bold text-emerald-400 mt-0.5 block">
+                      {selectedActivity.avgPowerW} W
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                      NP: {selectedActivity.normalizedPowerW ? `${Math.round(selectedActivity.normalizedPowerW)} W` : "--"}
+                    </span>
                   </div>
                 ) : null}
+
                 {selectedActivity.avgPaceSecPerKm ? (
-                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                    <span className="text-zinc-500 block">Pace</span>
-                    <span className="text-sm font-bold text-amber-400">{formatPace(selectedActivity.avgPaceSecPerKm)}</span>
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Lauf-Pace</span>
+                    <span className="text-base font-bold text-amber-400 mt-0.5 block">
+                      {formatPace(selectedActivity.avgPaceSecPerKm)}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">Schwellenwert-Bezug</span>
                   </div>
                 ) : null}
+
                 {selectedActivity.swolf ? (
-                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                    <span className="text-zinc-500 block">SWOLF</span>
-                    <span className="text-sm font-bold text-cyan-400">{selectedActivity.swolf}</span>
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">SWOLF & Bahn</span>
+                    <span className="text-base font-bold text-cyan-400 mt-0.5 block">
+                      {selectedActivity.swolf}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {selectedActivity.poolLengthM ? `${selectedActivity.poolLengthM}m Becken` : "Pool"}
+                    </span>
                   </div>
                 ) : null}
-                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                  <span className="text-zinc-500 block">TSS & IF</span>
-                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.tss} TSS ({selectedActivity.intensityFactor || "--"} IF)</span>
+
+                <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                  <span className="text-zinc-500 block text-[10px] uppercase">Trainingslast (TSS)</span>
+                  <span className="text-base font-bold text-zinc-200 mt-0.5 block">
+                    {selectedActivity.tss} TSS
+                  </span>
+                  <span className="text-[10px] text-zinc-500">
+                    IF: {selectedActivity.intensityFactor ? selectedActivity.intensityFactor.toFixed(2) : "--"}
+                  </span>
                 </div>
-                <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                  <span className="text-zinc-500 block">Kalorien</span>
-                  <span className="text-sm font-bold text-zinc-200">{selectedActivity.calories} kcal</span>
-                </div>
+
                 {selectedActivity.elevationGainM > 0 && (
-                  <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800">
-                    <span className="text-zinc-500 block">Höhenmeter</span>
-                    <span className="text-sm font-bold text-zinc-200">{Math.round(selectedActivity.elevationGainM)}m</span>
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Höhenmeter</span>
+                    <span className="text-base font-bold text-zinc-200 mt-0.5 block">
+                      {Math.round(selectedActivity.elevationGainM)} m
+                    </span>
+                    <span className="text-[10px] text-zinc-500">D+ Anstieg</span>
+                  </div>
+                )}
+
+                {selectedActivity.avgCadence && (
+                  <div className="rounded-xl bg-zinc-950/80 p-3 border border-zinc-800/80">
+                    <span className="text-zinc-500 block text-[10px] uppercase">Trittfrequenz</span>
+                    <span className="text-base font-bold text-zinc-200 mt-0.5 block">
+                      {selectedActivity.avgCadence} rpm
+                    </span>
+                    <span className="text-[10px] text-zinc-500">Ø Kadenz</span>
                   </div>
                 )}
               </div>
 
+              {/* Training Effect aus raw_json falls vorhanden */}
+              {selectedActivity.rawJson && (
+                <div className="rounded-xl bg-zinc-950/60 p-3.5 border border-zinc-800/80 text-xs font-mono space-y-1">
+                  <span className="text-zinc-400 font-semibold block mb-1">Garmin Training Effect:</span>
+                  <div className="flex gap-4 text-zinc-300">
+                    {selectedActivity.rawJson.aerobicTrainingEffect && (
+                      <span>Aerob: <strong className="text-emerald-400">{selectedActivity.rawJson.aerobicTrainingEffect}</strong> / 5.0</span>
+                    )}
+                    {selectedActivity.rawJson.anaerobicTrainingEffect && (
+                      <span>Anaerob: <strong className="text-purple-400">{selectedActivity.rawJson.anaerobicTrainingEffect}</strong> / 5.0</span>
+                    )}
+                    {selectedActivity.rawJson.vO2MaxValue && (
+                      <span>VO2max: <strong className="text-sky-400">{selectedActivity.rawJson.vO2MaxValue}</strong></span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Gym Linker in Modal */}
               {selectedActivity.sportType === "gym" && (
-                <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+                <div className="pt-3 border-t border-zinc-800 flex items-center justify-between">
                   <span className="text-xs text-zinc-400">Gym-Plan zuweisen:</span>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-2">
                     {gymTemplates.map((t) => (
                       <button
                         key={t.id}
@@ -1428,13 +1703,13 @@ export function DashboardApp() {
                           handleAssignGym(selectedActivity.activityId, t.id);
                           setSelectedActivity({ ...selectedActivity, linkedGymTemplateId: t.id });
                         }}
-                        className={`px-3 py-1 text-xs rounded font-mono font-bold transition-colors ${
+                        className={`px-3 py-1.5 text-xs rounded-lg font-mono font-bold transition-colors ${
                           selectedActivity.linkedGymTemplateId === t.id
                             ? "bg-violet-600 text-white"
                             : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                         }`}
                       >
-                        Plan {t.code}
+                        Plan {t.code} ({t.name})
                       </button>
                     ))}
                   </div>

@@ -168,30 +168,54 @@ def main():
         raw_acts = gc.get_activities(0, 30)
         for act in raw_acts:
             act_type = (act.get("activityType", {}).get("typeKey") or "").lower()
+            act_name = (act.get("activityName") or "").lower()
             avg_power = act.get("avgPower")
             duration_sec = int(act.get("duration", 0))
             distance_m = act.get("distance") or 0.0
 
-            is_cycling = any(k in act_type for k in ["cycling", "road_biking", "mountain_biking", "gravel_cycling", "biking", "virtual_ride"])
-            is_running = any(k in act_type for k in ["running", "trail_running", "treadmill_running", "track_running"])
             is_commute = False
             sport_type = "other"
-
             avg_pace_sec = None
-            if is_running:
+
+            # Classification rules:
+            # 1. Zwift / Virtual Ride
+            if any(k in act_type for k in ["virtual_ride", "indoor_cycling"]) or "zwift" in act_name:
+                sport_type = "zwift"
+            # 2. Cycling (Road, Gravel, Mountain)
+            elif any(k in act_type for k in ["cycling", "road_biking", "gravel_cycling", "mountain_biking", "biking"]):
+                if avg_power is not None and avg_power > 0:
+                    sport_type = "road_cycling"
+                    is_commute = False
+                else:
+                    sport_type = "commute"
+                    is_commute = True
+            # 3. Swimming
+            elif any(k in act_type for k in ["lap_swimming", "open_water_swimming", "swimming"]):
+                sport_type = "swimming"
+            # 4. Running
+            elif any(k in act_type for k in ["running", "street_running", "treadmill_running", "trail_running", "track_running"]):
                 sport_type = "running"
                 if distance_m > 0 and duration_sec > 0:
                     avg_pace_sec = int(duration_sec / (distance_m / 1000.0))
-            elif is_cycling:
-                if avg_power is None or avg_power == 0:
-                    sport_type = "commute"
-                    is_commute = True
-                else:
-                    sport_type = "zwift" if "virtual" in act_type or "indoor" in act_type else "road_cycling"
-            elif "swimming" in act_type or "lap_swimming" in act_type:
-                sport_type = "swimming"
-            elif any(k in act_type for k in ["strength_training", "fitness_equipment", "gym"]):
+            # 5. Gym / Strength
+            elif any(k in act_type for k in ["strength_training", "fitness_equipment", "functional_strength_training", "gym"]):
                 sport_type = "gym"
+            # 6. Recovery / Breathwork / Yoga / Meditation
+            elif any(k in act_type for k in ["breathwork", "meditation", "yoga", "mobility", "stretching", "pilates", "relaxation"]) or "entspannen" in act_name or "konzentrieren" in act_name:
+                sport_type = "recovery"
+            else:
+                sport_type = "other"
+
+            # Clean raw_json to store essential telemetry and splits
+            raw_meta = {
+                "activityType": act.get("activityType"),
+                "maxSpeed": act.get("maxSpeed"),
+                "maxPower": act.get("maxPower"),
+                "aerobicTrainingEffect": act.get("aerobicTrainingEffect"),
+                "anaerobicTrainingEffect": act.get("anaerobicTrainingEffect"),
+                "vO2MaxValue": act.get("vO2MaxValue"),
+                "device": act.get("deviceName"),
+            }
 
             synced_activities.append({
                 "activity_id": str(act.get("activityId")),
@@ -215,6 +239,7 @@ def main():
                 "swolf": act.get("averageSwolf"),
                 "calories": act.get("calories") or 0,
                 "linked_gym_template_id": None,
+                "raw_json": raw_meta,
             })
     except Exception as e:
         sys.stderr.write(f"Warn activities fetch failed: {e}\n")

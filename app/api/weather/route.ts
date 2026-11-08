@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const lat = searchParams.get("lat") || "52.56";
-  const lon = searchParams.get("lon") || "13.09";
+  const lat = searchParams.get("lat") || "52.5584";
+  const lon = searchParams.get("lon") || "13.0914";
 
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation_probability,rain,weather_code,wind_speed_10m&forecast_hours=6&timezone=auto`;
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     }));
 
     return NextResponse.json({
-      location: { lat: parseFloat(lat), lon: parseFloat(lon) },
+      location: { lat: parseFloat(lat), lon: parseFloat(lon), city: "Falkensee" },
       current: {
         temp,
         apparentTemp: current.apparent_temperature ?? temp,

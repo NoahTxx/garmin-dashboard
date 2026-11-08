@@ -149,6 +149,7 @@ export async function getActivities(): Promise<MockActivity[]> {
           calories: r.calories ?? 0,
           linkedGymTemplateId: r.linkedGymTemplateId,
           muscleLoadTags: (r.muscleLoadTags as string[]) ?? [],
+          rawJson: r.rawJson,
         }));
       }
     } catch (e) {
@@ -449,6 +450,7 @@ export async function saveSyncedData(params: {
         swolf: act.swolf,
         calories: act.calories ?? 0,
         linkedGymTemplateId: act.linked_gym_template_id ?? null,
+        rawJson: act.raw_json,
       };
       if (idx >= 0) {
         globalStore.activities[idx] = actObj;
@@ -458,32 +460,58 @@ export async function saveSyncedData(params: {
 
       if (db) {
         try {
+          const actValues = {
+            activityId: BigInt(actObj.activityId),
+            name: actObj.name,
+            sportType: actObj.sportType,
+            isCommute: actObj.isCommute,
+            startTime: new Date(actObj.startTime),
+            durationSec: actObj.durationSec,
+            distanceM: actObj.distanceM,
+            avgHr: actObj.avgHr,
+            maxHr: actObj.maxHr,
+            avgPowerW: actObj.avgPowerW,
+            normalizedPowerW: actObj.normalizedPowerW,
+            avgCadence: actObj.avgCadence,
+            avgPaceSecPerKm: actObj.avgPaceSecPerKm,
+            tss: actObj.tss,
+            intensityFactor: actObj.intensityFactor,
+            avgSpeedMps: actObj.avgSpeedMps,
+            elevationGainM: actObj.elevationGainM,
+            poolLengthM: actObj.poolLengthM,
+            swolf: actObj.swolf,
+            calories: actObj.calories,
+            linkedGymTemplateId: actObj.linkedGymTemplateId,
+            rawJson: actObj.rawJson,
+          };
           await db
             .insert(activities)
-            .values({
-              activityId: BigInt(actObj.activityId),
-              name: actObj.name,
-              sportType: actObj.sportType,
-              isCommute: actObj.isCommute,
-              startTime: new Date(actObj.startTime),
-              durationSec: actObj.durationSec,
-              distanceM: actObj.distanceM,
-              avgHr: actObj.avgHr,
-              maxHr: actObj.maxHr,
-              avgPowerW: actObj.avgPowerW,
-              normalizedPowerW: actObj.normalizedPowerW,
-              avgCadence: actObj.avgCadence,
-              avgPaceSecPerKm: actObj.avgPaceSecPerKm,
-              tss: actObj.tss,
-              intensityFactor: actObj.intensityFactor,
-              avgSpeedMps: actObj.avgSpeedMps,
-              elevationGainM: actObj.elevationGainM,
-              poolLengthM: actObj.poolLengthM,
-              swolf: actObj.swolf,
-              calories: actObj.calories,
-              linkedGymTemplateId: actObj.linkedGymTemplateId,
-            })
-            .onConflictDoNothing();
+            .values(actValues)
+            .onConflictDoUpdate({
+              target: activities.activityId,
+              set: {
+                name: actValues.name,
+                sportType: actValues.sportType,
+                isCommute: actValues.isCommute,
+                startTime: actValues.startTime,
+                durationSec: actValues.durationSec,
+                distanceM: actValues.distanceM,
+                avgHr: actValues.avgHr,
+                maxHr: actValues.maxHr,
+                avgPowerW: actValues.avgPowerW,
+                normalizedPowerW: actValues.normalizedPowerW,
+                avgCadence: actValues.avgCadence,
+                avgPaceSecPerKm: actValues.avgPaceSecPerKm,
+                tss: actValues.tss,
+                intensityFactor: actValues.intensityFactor,
+                avgSpeedMps: actValues.avgSpeedMps,
+                elevationGainM: actValues.elevationGainM,
+                poolLengthM: actValues.poolLengthM,
+                swolf: actValues.swolf,
+                calories: actValues.calories,
+                rawJson: actValues.rawJson,
+              },
+            });
         } catch (e) {
           // DB table fallback
         }
