@@ -13,7 +13,7 @@ import {
   MockGymTemplate,
   MockPlannedWorkout,
 } from "./mock-data";
-import { db } from "./db";
+import { db, ensureDbSchema } from "./db";
 import {
   athleteProfile,
   dailyMetrics,
@@ -34,6 +34,7 @@ const globalStore = {
 export async function getAthleteProfile(): Promise<MockAthleteProfile> {
   if (db) {
     try {
+      await ensureDbSchema();
       const rows = await db.select().from(athleteProfile).limit(1);
       if (rows.length > 0) {
         const r = rows[0];
@@ -95,7 +96,8 @@ export async function updateAthleteProfile(updates: Partial<MockAthleteProfile>)
 export async function getDailyMetrics(): Promise<MockDailyMetric[]> {
   if (db) {
     try {
-      const rows = await db.select().from(dailyMetrics).orderBy(desc(dailyMetrics.date)).limit(14);
+      await ensureDbSchema();
+      const rows = await db.select().from(dailyMetrics).orderBy(desc(dailyMetrics.date)).limit(30);
       if (rows.length > 0) {
         return rows.reverse().map((r) => ({
           date: r.date,
@@ -124,7 +126,8 @@ export async function getDailyMetrics(): Promise<MockDailyMetric[]> {
 export async function getActivities(): Promise<MockActivity[]> {
   if (db) {
     try {
-      const rows = await db.select().from(activities).orderBy(desc(activities.startTime)).limit(30);
+      await ensureDbSchema();
+      const rows = await db.select().from(activities).orderBy(desc(activities.startTime)).limit(50);
       if (rows.length > 0) {
         return rows.map((r) => ({
           activityId: r.activityId.toString(),
@@ -374,6 +377,10 @@ export async function saveSyncedData(params: {
   activities?: any[];
 }) {
   const { athleteStats, metrics = [], activities: acts = [] } = params;
+
+  if (db) {
+    await ensureDbSchema();
+  }
 
   if (athleteStats) {
     if (athleteStats.resting_hr) globalStore.profile.restingHr = athleteStats.resting_hr;

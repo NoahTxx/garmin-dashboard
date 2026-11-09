@@ -6,12 +6,48 @@ import { spawn } from "child_process";
 import path from "path";
 import { saveSyncedData } from "@/lib/store";
 
+function runPythonScript(execName: string, scriptPath: string, token: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+
+    try {
+      const pyProcess = spawn(execName, [scriptPath], {
+        env: { ...process.env, GARMIN_TOKEN: token },
+      });
+
+      pyProcess.stdout?.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      pyProcess.stderr?.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      pyProcess.on("error", (err) => {
+        stderr += ` (Spawn ${execName} error: ${err.message})`;
+        resolve({ exitCode: 1, stdout, stderr });
+      });
+
+      pyProcess.on("close", (code) => {
+        resolve({ exitCode: code ?? 1, stdout, stderr });
+      });
+    } catch (err) {
+      resolve({
+        exitCode: 1,
+        stdout,
+        stderr: err instanceof Error ? err.message : "Spawn failed",
+      });
+    }
+  });
+}
+
 export async function POST() {
   const token = process.env.GARMIN_TOKEN;
   if (!token) {
     return NextResponse.json({
       success: false,
-      message: "Kein GARMIN_TOKEN in .env.local gefunden.",
+      message: "Keine GARMIN_TOKEN Umgebungsvariable auf Railway gesetzt. Bitte in Railway unter Variables als GARMIN_TOKEN eintragen.",
       isMock: true,
       syncedAt: new Date().toISOString(),
     });
@@ -20,37 +56,30 @@ export async function POST() {
   const scriptPath = path.join(process.cwd(), "scripts", "sync_garmin.py");
 
   try {
-    const pythonExec = process.platform === "win32" ? "python" : "python3";
-    const pyProcess = spawn(pythonExec, [scriptPath], {
-      env: { ...process.env, GARMIN_TOKEN: token },
-    });
+    // Try python3 first on Linux/Railway, fallback to python
+    const primaryExec = process.platform === "win32" ? "python" : "python3";
+    const fallbackExec = process.platform === "win32" ? "py" : "python";
 
-    let stdout = "";
-    let stderr = "";
+    let result = await runPythonScript(primaryExec, scriptPath, token);
 
-    pyProcess.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
+    // If primary failed with command not found, try fallback
+    if (result.exitCode !== 0 && (result.stderr.includes("ENOENT") || !result.stdout.trim())) {
+      const fallbackResult = await runPythonScript(fallbackExec, scriptPath, token);
+      if (fallbackResult.stdout.trim() || fallbackResult.exitCode === 0) {
+        result = fallbackResult;
+      }
+    }
 
-    pyProcess.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    const exitCode = await new Promise<number>((resolve) => {
-      pyProcess.on("close", resolve);
-      pyProcess.on("error", () => resolve(1));
-    });
-
-    if (exitCode !== 0 || !stdout.trim()) {
+    if (result.exitCode !== 0 || !result.stdout.trim()) {
       return NextResponse.json({
         success: false,
-        message: stderr || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden.",
+        message: result.stderr.trim() || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
         fallback: true,
       });
     }
 
     try {
-      const parsed = JSON.parse(stdout);
+      const parsed = JSON.parse(result.stdout);
       if (parsed.status === "error") {
         return NextResponse.json({
           success: false,
@@ -79,7 +108,7 @@ export async function POST() {
       return NextResponse.json({
         success: false,
         message: "Ungültige Antwort vom Garmin Sync-Skript.",
-        rawOutput: stdout,
+        rawOutput: result.stdout,
       });
     }
   } catch (err: unknown) {

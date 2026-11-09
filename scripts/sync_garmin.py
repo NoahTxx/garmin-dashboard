@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Robust Garmin Connect Sync
-- Unterstützt sowohl das neue garminconnect 0.8+ DI-Token Format als auch base64/garth dumps.
-- Holt Aktivitäten (inkl. Running mit Pace & Kadenz, Auto-Commute ohne Watt).
-- Holt tägliche Metriken (HRV, Sleep, Training Readiness, Body Battery, Acute Load).
+- Unterstützt modernes DI-Token Format, base64 dumps und JSON-Strings.
+- Holt Aktivitäten (inkl. Running mit Pace & Kadenz, Radsport mit Garmin Training Load).
+- Bereinigt abgeschnittene Recovery-Titel ("Entspannen & Konzentrieren").
+- Holt tägliche Metriken (HRV, Schlaf, Training Readiness, Body Battery, Akute Last).
 """
 
 import os
@@ -11,6 +12,7 @@ import sys
 import json
 import base64
 import datetime
+import traceback
 from typing import Optional, Dict, Any, List
 
 try:
@@ -23,55 +25,81 @@ def init_garmin_client(token_raw: str):
     import garminconnect
     token_str = token_raw.strip().strip('"').strip("'")
 
-    gc = garminconnect.Garmin()
-
-    # 1. Versuche token als JSON oder Base64 zu parsen
-    parsed_data = None
-    if token_str.startswith("{") or token_str.startswith("["):
-        try:
-            parsed_data = json.loads(token_str)
-        except Exception:
-            pass
-
-    if parsed_data is None:
+    # 1. Base64 Decode falls kein reines JSON
+    if not (token_str.startswith("{") or token_str.startswith("[")):
         try:
             decoded = base64.b64decode(token_str).decode("utf-8")
-            parsed_data = json.loads(decoded)
+            if decoded.strip().startswith("{") or decoded.strip().startswith("["):
+                token_str = decoded.strip()
         except Exception:
             pass
 
-    if parsed_data is None:
-        raise ValueError("Token konnte weder als JSON noch als Base64 decodiert werden.")
+    gc = garminconnect.Garmin()
 
-    # 2. Extrahiere Token-Felder
-    token_obj = parsed_data[0] if isinstance(parsed_data, list) and len(parsed_data) > 0 else parsed_data
+    # 2. Versuche nativen gc.login(tokenstore=...)
+    authenticated = False
+    try:
+        gc.login(tokenstore=token_str)
+        authenticated = gc.client.is_authenticated
+    except Exception as e:
+        sys.stderr.write(f"Direct gc.login: {e}\n")
 
-    # Neues garminconnect DI Format
-    di_token = token_obj.get("di_token") or token_obj.get("access_token")
-    di_refresh = token_obj.get("di_refresh_token") or token_obj.get("refresh_token")
-    di_client_id = token_obj.get("di_client_id") or token_obj.get("client_id") or "GARMIN_CONNECT_MOBILE_ANDROID_DI"
+    # 3. Fallback: Parse Token-Objekt manuell
+    if not authenticated:
+        try:
+            parsed = json.loads(token_str)
+            token_obj = parsed[0] if isinstance(parsed, list) and len(parsed) > 0 else parsed
+            di_token = token_obj.get("di_token") or token_obj.get("access_token")
+            di_refresh = token_obj.get("di_refresh_token") or token_obj.get("refresh_token")
+            di_client_id = token_obj.get("di_client_id") or token_obj.get("client_id") or "GARMIN_CONNECT_MOBILE_ANDROID_DI"
 
-    if not di_token:
-        raise ValueError("Kein valider Access-Token (access_token oder di_token) im Token-Payload gefunden.")
+            if di_token:
+                gc.client.di_token = di_token
+                gc.client.di_refresh_token = di_refresh
+                gc.client.di_client_id = di_client_id
 
-    payload = {
-        "di_token": di_token,
-        "di_refresh_token": di_refresh,
-        "di_client_id": di_client_id,
-    }
+                # Versuche Refresh falls Token abgelaufen
+                if di_refresh:
+                    try:
+                        gc.client._refresh_session()
+                    except Exception as re:
+                        sys.stderr.write(f"Token refresh attempt: {re}\n")
 
-    gc.client.loads(json.dumps(payload))
-    if not gc.client.is_authenticated:
-        raise ValueError("Authentifizierung mit dem übergebenen Token fehlgeschlagen.")
+                # Profil & Display Name laden für API Aufrufe
+                try:
+                    gc._load_profile_and_settings()
+                except Exception as pe:
+                    sys.stderr.write(f"Profile load info: {pe}\n")
+
+                authenticated = gc.client.is_authenticated
+        except Exception as parse_err:
+            sys.stderr.write(f"Token parse error: {parse_err}\n")
+
+    if not authenticated:
+        raise ValueError("Garmin Client konnte nicht mit dem hinterlegten Token authentifiziert werden.")
 
     return gc
+
+def clean_activity_name(name: str, sport_type: str) -> str:
+    if not name:
+        return "Aktivität"
+    clean = name.strip()
+    # Garmin schneidet manchmal Atem-Aktivitäten ab wie "Entspannen und Konzentrieren (K"
+    lower = clean.lower()
+    if "entspannen" in lower and "konzentrieren" in lower:
+        return "Entspannen & Konzentrieren (Kurz)"
+    if "entspannen" in lower and clean.endswith("("):
+        return "Entspannung & Atemübung"
+    if clean.endswith(" (k") or clean.endswith(" (K"):
+        return clean[:-3].strip() + " (Kurz)"
+    return clean
 
 def main():
     token_str = os.environ.get("GARMIN_TOKEN")
     if not token_str:
         print(json.dumps({
             "status": "error",
-            "message": "GARMIN_TOKEN Umgebungsvariable fehlt in .env.local."
+            "message": "GARMIN_TOKEN Umgebungsvariable fehlt in der Konfiguration."
         }))
         sys.exit(0)
 
@@ -85,7 +113,7 @@ def main():
         sys.exit(0)
 
     today = datetime.date.today()
-    start_date = today - datetime.timedelta(days=14)
+    start_date = today - datetime.timedelta(days=30)
 
     synced_metrics: List[Dict[str, Any]] = []
     synced_activities: List[Dict[str, Any]] = []
@@ -103,7 +131,7 @@ def main():
     except Exception as e:
         sys.stderr.write(f"Warn: User summary fetch: {e}\n")
 
-    # 2. Letzte 14 Tage Metriken
+    # 2. Tägliche Metriken (letzte 30 Tage)
     curr = start_date
     while curr <= today:
         date_str = curr.isoformat()
@@ -158,14 +186,16 @@ def main():
                 "training_readiness": readiness,
                 "acute_load": stats.get("acuteLoad") if isinstance(stats, dict) else None,
             }
-            synced_metrics.append(metric)
+            # Nur hinzufügen, wenn mindestens eine echte Metrik vorhanden ist
+            if any(metric[k] is not None for k in ["resting_hr", "hrv_last_night", "sleep_score", "body_battery_max", "training_readiness", "acute_load"]):
+                synced_metrics.append(metric)
         except Exception as e:
             sys.stderr.write(f"Warn metric {date_str}: {e}\n")
         curr += datetime.timedelta(days=1)
 
-    # 3. Aktivitäten (letzte 30)
+    # 3. Aktivitäten (letzte 50)
     try:
-        raw_acts = gc.get_activities(0, 30)
+        raw_acts = gc.get_activities(0, 50)
         for act in raw_acts:
             act_type = (act.get("activityType", {}).get("typeKey") or "").lower()
             act_name = (act.get("activityName") or "").lower()
@@ -177,11 +207,9 @@ def main():
             sport_type = "other"
             avg_pace_sec = None
 
-            # Classification rules:
-            # 1. Zwift / Virtual Ride
+            # Sportart-Klassifizierung
             if any(k in act_type for k in ["virtual_ride", "indoor_cycling"]) or "zwift" in act_name:
                 sport_type = "zwift"
-            # 2. Cycling (Road, Gravel, Mountain)
             elif any(k in act_type for k in ["cycling", "road_biking", "gravel_cycling", "mountain_biking", "biking"]):
                 if avg_power is not None and avg_power > 0:
                     sport_type = "road_cycling"
@@ -189,37 +217,54 @@ def main():
                 else:
                     sport_type = "commute"
                     is_commute = True
-            # 3. Swimming
             elif any(k in act_type for k in ["lap_swimming", "open_water_swimming", "swimming"]):
                 sport_type = "swimming"
-            # 4. Running
             elif any(k in act_type for k in ["running", "street_running", "treadmill_running", "trail_running", "track_running"]):
                 sport_type = "running"
                 if distance_m > 0 and duration_sec > 0:
                     avg_pace_sec = int(duration_sec / (distance_m / 1000.0))
-            # 5. Gym / Strength
             elif any(k in act_type for k in ["strength_training", "fitness_equipment", "functional_strength_training", "gym"]):
                 sport_type = "gym"
-            # 6. Recovery / Breathwork / Yoga / Meditation
             elif any(k in act_type for k in ["breathwork", "meditation", "yoga", "mobility", "stretching", "pilates", "relaxation"]) or "entspannen" in act_name or "konzentrieren" in act_name:
                 sport_type = "recovery"
             else:
                 sport_type = "other"
 
-            # Clean raw_json to store essential telemetry and splits
+            # Bereinigter Name
+            cleaned_name = clean_activity_name(act.get("activityName") or "Aktivität", sport_type)
+
+            # Garmin Trainingsbelastung (Activity Training Load / Exercise Load)
+            # Garmin speichert die Belastung als activityTrainingLoad oder exerciseLoad
+            garmin_load = act.get("activityTrainingLoad") or act.get("exerciseLoad") or act.get("trainingStressScore")
+            if garmin_load is not None:
+                try:
+                    garmin_load = round(float(garmin_load))
+                except Exception:
+                    garmin_load = 0
+            else:
+                garmin_load = 0
+
+            # Trainingseffekt nur für echte Trainingseinheiten, NIE für Recovery
+            aerobic_te = None
+            anaerobic_te = None
+            if sport_type != "recovery":
+                aerobic_te = act.get("aerobicTrainingEffect")
+                anaerobic_te = act.get("anaerobicTrainingEffect")
+
             raw_meta = {
                 "activityType": act.get("activityType"),
                 "maxSpeed": act.get("maxSpeed"),
                 "maxPower": act.get("maxPower"),
-                "aerobicTrainingEffect": act.get("aerobicTrainingEffect"),
-                "anaerobicTrainingEffect": act.get("anaerobicTrainingEffect"),
+                "aerobicTrainingEffect": aerobic_te,
+                "anaerobicTrainingEffect": anaerobic_te,
                 "vO2MaxValue": act.get("vO2MaxValue"),
                 "device": act.get("deviceName"),
+                "garminLoad": garmin_load,
             }
 
             synced_activities.append({
                 "activity_id": str(act.get("activityId")),
-                "name": act.get("activityName") or "Aktivität",
+                "name": cleaned_name,
                 "sport_type": sport_type,
                 "is_commute": is_commute,
                 "start_time": act.get("startTimeGMT") or f"{today.isoformat()}T00:00:00Z",
@@ -231,7 +276,7 @@ def main():
                 "normalized_power_w": act.get("normPower"),
                 "avg_cadence": act.get("averageRunningCadenceInStepsPerMinute") or act.get("averageBikeCadence"),
                 "avg_pace_sec_per_km": avg_pace_sec,
-                "tss": act.get("trainingStressScore") or 0,
+                "tss": garmin_load if sport_type != "recovery" else 0,
                 "intensity_factor": act.get("intensityFactor") or 0,
                 "avg_speed_mps": act.get("averageSpeed") or 0,
                 "elevation_gain_m": act.get("elevationGain") or 0,
