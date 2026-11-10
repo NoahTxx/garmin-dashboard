@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --apex-bg: #0B0F14;
+  --apex-surface: #121821;
+  --apex-surface-hover: #17202C;
+  --apex-border: rgba(255, 255, 255, 0.06);
+  --apex-border-strong: rgba(255, 255, 255, 0.12);
+  --apex-primary: #3B82F6;
+  --apex-success: #34D399;
+  --apex-warning: #F59E0B;
+  --apex-critical: #F87171;
+  --apex-energy: #8B5CF6;
+  --apex-text-primary: #F8FAFC;
+  --apex-text-secondary: #94A3B8;
+  --apex-text-muted: #64748B;
+
+  --background: #0B0F14;
+  --foreground: #F8FAFC;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-apex-bg: var(--apex-bg);
+  --color-apex-surface: var(--apex-surface);
+  --color-apex-surface-hover: var(--apex-surface-hover);
+  --color-apex-border: var(--apex-border);
+  --color-apex-primary: var(--apex-primary);
+  --color-apex-success: var(--apex-success);
+  --color-apex-warning: var(--apex-warning);
+  --color-apex-critical: var(--apex-critical);
+  --color-apex-energy: var(--apex-energy);
+  --color-apex-text-primary: var(--apex-text-primary);
+  --color-apex-text-secondary: var(--apex-text-secondary);
+  --color-apex-text-muted: var(--apex-text-muted);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #0B0F14;
+  color: #F8FAFC;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Global Subtle Dark Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }

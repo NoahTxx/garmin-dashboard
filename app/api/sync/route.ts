@@ -56,17 +56,24 @@ export async function POST() {
   const scriptPath = path.join(process.cwd(), "scripts", "sync_garmin.py");
 
   try {
-    // Try python3 first on Linux/Railway, fallback to python
-    const primaryExec = process.platform === "win32" ? "python" : "python3";
-    const fallbackExec = process.platform === "win32" ? "py" : "python";
+    // Try candidate executables in order until one succeeds with JSON output
+    const candidates = process.platform === "win32"
+      ? ["python", "py", "python3"]
+      : ["python3", "python"];
 
-    let result = await runPythonScript(primaryExec, scriptPath, token);
+    let result = { exitCode: 1, stdout: "", stderr: "" };
 
-    // If primary failed with command not found, try fallback
-    if (result.exitCode !== 0 && (result.stderr.includes("ENOENT") || !result.stdout.trim())) {
-      const fallbackResult = await runPythonScript(fallbackExec, scriptPath, token);
-      if (fallbackResult.stdout.trim() || fallbackResult.exitCode === 0) {
-        result = fallbackResult;
+    for (const execName of candidates) {
+      result = await runPythonScript(execName, scriptPath, token);
+      if (result.stdout.trim()) {
+        try {
+          const testParse = JSON.parse(result.stdout);
+          if (testParse.status === "success" || testParse.status === "error") {
+            break;
+          }
+        } catch {
+          // stdout wasn't valid sync json, continue to next candidate if available
+        }
       }
     }
 
