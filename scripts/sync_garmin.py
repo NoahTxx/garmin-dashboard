@@ -17,16 +17,19 @@ from typing import Optional, Dict, Any, List
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(".env.local")
+    load_dotenv(".env.local", override=True)
+    load_dotenv()
 except Exception:
     pass
 
-def init_garmin_client(token_raw: str):
+def init_garmin_client(token_raw: str = ""):
     import garminconnect
-    token_str = token_raw.strip().strip('"').strip("'")
+    import garth
+
+    token_str = (token_raw or os.getenv("GARMIN_TOKEN") or "").strip().strip('"').strip("'")
 
     # 1. Base64 Decode falls kein reines JSON
-    if not (token_str.startswith("{") or token_str.startswith("[")):
+    if token_str and not (token_str.startswith("{") or token_str.startswith("[")):
         try:
             decoded = base64.b64decode(token_str).decode("utf-8")
             if decoded.strip().startswith("{") or decoded.strip().startswith("["):
@@ -35,59 +38,102 @@ def init_garmin_client(token_raw: str):
             pass
 
     gc = garminconnect.Garmin()
-
-    # 2. Versuche nativen gc.login(tokenstore=...)
     authenticated = False
-    try:
-        gc.login(tokenstore=token_str)
-        authenticated = gc.client.is_authenticated
-    except Exception as e:
-        sys.stderr.write(f"Direct gc.login: {e}\n")
 
-    # 3. Fallback: Parse Token-Objekt manuell (unterstützt Listen und Dictionaries)
-    if not authenticated:
+    if token_str:
+        # A. Erst garth.client.loads() versuchen (nur falls valides JSON)
+        if token_str.startswith("{") or token_str.startswith("["):
+            try:
+                garth.client.loads(token_str)
+                if hasattr(gc, "garth"):
+                    gc.garth = garth.client
+                # Kopiere tokens in gc.client falls gc.client eigene garth session hält
+                if hasattr(gc.client, "oauth1_token") and garth.client.oauth1_token:
+                    gc.client.oauth1_token = garth.client.oauth1_token
+                if hasattr(gc.client, "oauth2_token") and garth.client.oauth2_token:
+                    gc.client.oauth2_token = garth.client.oauth2_token
+                if hasattr(gc.client, "username") and garth.client.username:
+                    gc.client.username = garth.client.username
+            except Exception as ge:
+                pass
+
+        # B. Versuche gc.client.loads() direkt wenn String JSON ist (verhindert 'Username and password are required')
         try:
-            parsed = json.loads(token_str)
-            token_list = parsed if isinstance(parsed, list) else [parsed]
-
-            # Suche nach access_token / di_token in den Token-Objekten
-            di_token = None
-            di_refresh = None
-            di_client_id = "GARMIN_CONNECT_MOBILE_ANDROID_DI"
-
-            for item in token_list:
-                if isinstance(item, dict):
-                    if not di_token:
-                        di_token = item.get("di_token") or item.get("access_token")
-                    if not di_refresh:
-                        di_refresh = item.get("di_refresh_token") or item.get("refresh_token")
-                    if item.get("di_client_id") or item.get("client_id"):
-                        di_client_id = item.get("di_client_id") or item.get("client_id")
-                    # Wenn Garth oauth tokens vorliegen:
-                    if "oauth1_token" in item:
-                        gc.client.oauth1_token = item["oauth1_token"]
-                    if "oauth2_token" in item:
-                        gc.client.oauth2_token = item["oauth2_token"]
-
-            if di_token:
-                gc.client.di_token = di_token
-                gc.client.di_refresh_token = di_refresh
-                gc.client.di_client_id = di_client_id
-
-                if di_refresh:
+            if token_str.startswith("{") or token_str.startswith("["):
+                # Wenn garminconnect Client.loads(tokenstore) unterstützt
+                if hasattr(gc.client, "loads"):
+                    # Falls es eine Liste ist, nimm das Objekt mit di_token / access_token
+                    payload_str = token_str
                     try:
-                        gc.client._refresh_session()
-                    except Exception as re:
-                        sys.stderr.write(f"Token refresh attempt: {re}\n")
+                        parsed = json.loads(token_str)
+                        if isinstance(parsed, list) and len(parsed) > 0:
+                            # Client.loads erwartet dict mit di_token
+                            dict_item = next((item for item in parsed if isinstance(item, dict) and (item.get("di_token") or item.get("access_token"))), parsed[0])
+                            # Falls access_token statt di_token:
+                            if "di_token" not in dict_item and "access_token" in dict_item:
+                                dict_item["di_token"] = dict_item["access_token"]
+                            if "di_refresh_token" not in dict_item and "refresh_token" in dict_item:
+                                dict_item["di_refresh_token"] = dict_item["refresh_token"]
+                            payload_str = json.dumps(dict_item)
+                    except Exception:
+                        pass
+                    gc.client.loads(payload_str)
+                    authenticated = gc.client.is_authenticated
+        except Exception as le:
+            sys.stderr.write(f"gc.client.loads info: {le}\n")
 
-                try:
-                    gc._load_profile_and_settings()
-                except Exception as pe:
-                    sys.stderr.write(f"Profile load info: {pe}\n")
+        # C. Fallback: Parse Token-Objekt manuell
+        if not authenticated:
+            try:
+                parsed = json.loads(token_str)
+                token_list = parsed if isinstance(parsed, list) else [parsed]
+                di_token = None
+                di_refresh = None
+                di_client_id = "GARMIN_CONNECT_MOBILE_ANDROID_DI"
 
-                authenticated = gc.client.is_authenticated
-        except Exception as parse_err:
-            sys.stderr.write(f"Token parse error: {parse_err}\n")
+                for item in token_list:
+                    if isinstance(item, dict):
+                        if not di_token:
+                            di_token = item.get("di_token") or item.get("access_token")
+                        if not di_refresh:
+                            di_refresh = item.get("di_refresh_token") or item.get("refresh_token")
+                        if item.get("di_client_id") or item.get("client_id"):
+                            di_client_id = item.get("di_client_id") or item.get("client_id")
+                        if "oauth1_token" in item and hasattr(gc.client, "oauth1_token"):
+                            gc.client.oauth1_token = item["oauth1_token"]
+                        if "oauth2_token" in item and hasattr(gc.client, "oauth2_token"):
+                            gc.client.oauth2_token = item["oauth2_token"]
+
+                if di_token:
+                    gc.client.di_token = di_token
+                    gc.client.di_refresh_token = di_refresh
+                    gc.client.di_client_id = di_client_id
+
+                    if di_refresh:
+                        try:
+                            gc.client._refresh_session()
+                        except Exception as re:
+                            sys.stderr.write(f"Token refresh attempt: {re}\n")
+
+                    try:
+                        gc._load_profile_and_settings()
+                    except Exception as pe:
+                        sys.stderr.write(f"Profile load info: {pe}\n")
+
+                    authenticated = gc.client.is_authenticated
+            except Exception as parse_err:
+                sys.stderr.write(f"Token parse error: {parse_err}\n")
+
+    # D. Credentials fallback falls kein Token oder Token ungültig
+    email = os.getenv("GARMIN_EMAIL")
+    password = os.getenv("GARMIN_PASSWORD")
+    if not authenticated and email and password:
+        try:
+            gc = garminconnect.Garmin(email, password)
+            gc.login()
+            authenticated = gc.client.is_authenticated
+        except Exception as ce:
+            sys.stderr.write(f"Garmin credential login error: {ce}\n")
 
     if not authenticated or not gc.client.is_authenticated:
         raise ValueError("Garmin Client konnte nicht mit dem hinterlegten Token authentifiziert werden. Token abgelaufen oder ungültig.")
