@@ -4,6 +4,7 @@ config({ path: ".env.local" });
 import { NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
+import fs from "fs";
 import { saveSyncedData } from "@/lib/store";
 
 function runPythonScript(
@@ -98,10 +99,25 @@ export async function POST(req: Request) {
   const scriptPath = path.join(process.cwd(), "scripts", "sync_garmin.py");
 
   try {
-    // Try candidate executables in order until one succeeds with JSON output
-    const candidates = process.platform === "win32"
-      ? ["python", "py", "python3"]
-      : ["python3", "python"];
+    // Robust executable resolution (Windows vs. Linux / Railway Nixpacks)
+    const candidates: string[] = [];
+    if (process.platform === "win32") {
+      candidates.push("python", "py", "python3");
+    } else {
+      // Bekannte Linux / Nixpacks Pfade zuerst prüfen
+      const nixPlaformPaths = [
+        "/root/.nix-profile/bin/python3",
+        "/nix/var/nix/profiles/default/bin/python3",
+        "/usr/local/bin/python3",
+        "/usr/bin/python3",
+      ];
+      for (const p of nixPlaformPaths) {
+        if (fs.existsSync(p)) {
+          candidates.push(p);
+        }
+      }
+      candidates.push("python3", "python");
+    }
 
     let result = { exitCode: 1, stdout: "", stderr: "" };
 
@@ -125,21 +141,25 @@ export async function POST(req: Request) {
         .replace(/token=([^\s&]+)/gi, "token=***")
         .slice(0, 300);
 
-      return NextResponse.json({
-        success: false,
-        message: cleanErr || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
-        fallback: true,
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          message: cleanErr || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
+        },
+        { status: 500 }
+      );
     }
 
     try {
       const parsed = JSON.parse(result.stdout);
       if (parsed.status === "error") {
-        return NextResponse.json({
-          success: false,
-          message: parsed.message,
-          fallback: true,
-        });
+        return NextResponse.json(
+          {
+            success: false,
+            message: parsed.message,
+          },
+          { status: 500 }
+        );
       }
 
       // Persist metrics, activities and athlete stats
@@ -159,18 +179,23 @@ export async function POST(req: Request) {
         },
       });
     } catch {
-      return NextResponse.json({
-        success: false,
-        message: "Ungültige Antwort vom Garmin Sync-Skript.",
-        rawOutput: result.stdout,
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Ungültige Antwort vom Garmin Sync-Skript.",
+          rawOutput: result.stdout,
+        },
+        { status: 500 }
+      );
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unbekannter Serverfehler";
-    return NextResponse.json({
-      success: false,
-      message: `Sync-Fehler: ${msg}`,
-      fallback: true,
-    });
+    return NextResponse.json(
+      {
+        success: false,
+        message: `Sync-Fehler: ${msg}`,
+      },
+      { status: 500 }
+    );
   }
 }
