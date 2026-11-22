@@ -50,7 +50,7 @@ export function DashboardApp() {
   const [activities, setActivities] = useState<MockActivity[]>([]);
   const [gymTemplates, setGymTemplates] = useState<MockGymTemplate[]>([]);
   const [plannedWorkouts, setPlannedWorkouts] = useState<MockPlannedWorkout[]>([]);
-  const [todayStr, setTodayStr] = useState("2026-11-08");
+  const [todayStr, setTodayStr] = useState(() => new Date().toISOString().split("T")[0]);
 
   // Weather state
   const [weather, setWeather] = useState<WeatherData | null>(null);

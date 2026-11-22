@@ -25,16 +25,16 @@ export function ProfileView({
   syncing,
   onUpdateProfile,
 }: ProfileViewProps) {
-  const [weight, setWeight] = useState(profile?.weightKg?.toString() || "72.5");
-  const [restingHr, setRestingHr] = useState(profile?.restingHr?.toString() || "48");
-  const [maxHr, setMaxHr] = useState(profile?.maxHr?.toString() || "190");
+  const [weight, setWeight] = useState(profile?.weightKg ? profile.weightKg.toString() : "");
+  const [restingHr, setRestingHr] = useState(profile?.restingHr ? profile.restingHr.toString() : "");
+  const [maxHr, setMaxHr] = useState(profile?.maxHr ? profile.maxHr.toString() : "");
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleSaveSettings = () => {
     onUpdateProfile({
-      weightKg: parseFloat(weight) || 72.5,
-      restingHr: parseInt(restingHr) || 48,
-      maxHr: parseInt(maxHr) || 190,
+      weightKg: weight ? parseFloat(weight) : undefined,
+      restingHr: restingHr ? parseInt(restingHr) : undefined,
+      maxHr: maxHr ? parseInt(maxHr) : undefined,
     });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -206,6 +206,7 @@ export function ProfileView({
             <input
               type="number"
               step="0.1"
+              placeholder="z.B. 72.0"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               className="w-full rounded-xl bg-[#0B0F14] border border-white/[0.08] px-3 py-2 text-sm text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"
@@ -215,6 +216,7 @@ export function ProfileView({
             <label className="text-xs text-[#94A3B8] block mb-1.5">Ruhepuls (bpm)</label>
             <input
               type="number"
+              placeholder="z.B. 48"
               value={restingHr}
               onChange={(e) => setRestingHr(e.target.value)}
               className="w-full rounded-xl bg-[#0B0F14] border border-white/[0.08] px-3 py-2 text-sm text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"
@@ -224,6 +226,7 @@ export function ProfileView({
             <label className="text-xs text-[#94A3B8] block mb-1.5">Max HR (bpm)</label>
             <input
               type="number"
+              placeholder="z.B. 190"
               value={maxHr}
               onChange={(e) => setMaxHr(e.target.value)}
               className="w-full rounded-xl bg-[#0B0F14] border border-white/[0.08] px-3 py-2 text-sm text-[#F8FAFC] font-mono focus:outline-none focus:border-[#3B82F6]"

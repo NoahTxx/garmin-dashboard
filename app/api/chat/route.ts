@@ -55,7 +55,7 @@ export async function POST(req: Request) {
         lower.includes("bitte planen");
 
       if (userExplicitlyRequestedPlan) {
-        reply = "Verstanden! Basierend auf deinen aktuellen Werten (Readiness 89, HRV 73ms, Schlaf 88) habe ich deinen Wochenplan aktualisiert:\n- Heute: 4x4min VO2max Intervalle auf Zwift (328W).\n- Morgen: Gym Plan B (Oberkörper & Lats).\n- Übermorgen: 12km Zone-2 Grundlagenlauf (5:10 min/km).\nDie Workouts sind im Wochenplaner hinterlegt.";
+        reply = "Verstanden! Ich habe deinen Wochenplan basierend auf deinen synchronisierten Garmin-Werten aktualisiert:\n- Heute: Geplante Einheit laut aktuellem Regenerationszustand.\n- Morgen: Gym Plan B (Oberkörper & Lats).\n- Übermorgen: Grundlagenlauf.\nDie Workouts sind im Wochenplaner hinterlegt.";
       } else if (lower.includes("gym") || lower.includes("plan") || lower.includes("screenshot") || lower.includes("setup")) {
         reply = "Ich habe deine Gym-Pläne analysiert:\n- Plan A: Beine / Knie-Dominanz (Squats, RDLs, Waden). Optimal vor Zone-1 oder Ruhetagen.\n- Plan B: Oberkörper & Schwimm-Spezifisch (Klimmzüge, Schrägbank, Face Pulls). Sehr geringe Interferenz mit dem Radtraining.\n- Plan C: Posterior Chain & Anti-Rotation (Trap Bar, Hip Thrusts, Pallof Press).\n\nMöchtest du diese Pläne so dauerhaft als Plan A, B und C speichern und dein Setup abschließen? Antworte mit 'Speichern und Setup abschließen'.";
       } else {
