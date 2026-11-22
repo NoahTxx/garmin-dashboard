@@ -44,28 +44,42 @@ def init_garmin_client(token_raw: str):
     except Exception as e:
         sys.stderr.write(f"Direct gc.login: {e}\n")
 
-    # 3. Fallback: Parse Token-Objekt manuell
+    # 3. Fallback: Parse Token-Objekt manuell (unterstützt Listen und Dictionaries)
     if not authenticated:
         try:
             parsed = json.loads(token_str)
-            token_obj = parsed[0] if isinstance(parsed, list) and len(parsed) > 0 else parsed
-            di_token = token_obj.get("di_token") or token_obj.get("access_token")
-            di_refresh = token_obj.get("di_refresh_token") or token_obj.get("refresh_token")
-            di_client_id = token_obj.get("di_client_id") or token_obj.get("client_id") or "GARMIN_CONNECT_MOBILE_ANDROID_DI"
+            token_list = parsed if isinstance(parsed, list) else [parsed]
+
+            # Suche nach access_token / di_token in den Token-Objekten
+            di_token = None
+            di_refresh = None
+            di_client_id = "GARMIN_CONNECT_MOBILE_ANDROID_DI"
+
+            for item in token_list:
+                if isinstance(item, dict):
+                    if not di_token:
+                        di_token = item.get("di_token") or item.get("access_token")
+                    if not di_refresh:
+                        di_refresh = item.get("di_refresh_token") or item.get("refresh_token")
+                    if item.get("di_client_id") or item.get("client_id"):
+                        di_client_id = item.get("di_client_id") or item.get("client_id")
+                    # Wenn Garth oauth tokens vorliegen:
+                    if "oauth1_token" in item:
+                        gc.client.oauth1_token = item["oauth1_token"]
+                    if "oauth2_token" in item:
+                        gc.client.oauth2_token = item["oauth2_token"]
 
             if di_token:
                 gc.client.di_token = di_token
                 gc.client.di_refresh_token = di_refresh
                 gc.client.di_client_id = di_client_id
 
-                # Versuche Refresh falls Token abgelaufen
                 if di_refresh:
                     try:
                         gc.client._refresh_session()
                     except Exception as re:
                         sys.stderr.write(f"Token refresh attempt: {re}\n")
 
-                # Profil & Display Name laden für API Aufrufe
                 try:
                     gc._load_profile_and_settings()
                 except Exception as pe:
@@ -75,8 +89,8 @@ def init_garmin_client(token_raw: str):
         except Exception as parse_err:
             sys.stderr.write(f"Token parse error: {parse_err}\n")
 
-    if not authenticated:
-        raise ValueError("Garmin Client konnte nicht mit dem hinterlegten Token authentifiziert werden.")
+    if not authenticated or not gc.client.is_authenticated:
+        raise ValueError("Garmin Client konnte nicht mit dem hinterlegten Token authentifiziert werden. Token abgelaufen oder ungültig.")
 
     return gc
 
@@ -112,8 +126,16 @@ def main():
         }))
         sys.exit(0)
 
+    # Tage-Parameter aus CLI auswerten (Standard: 30 Tage, oder z.B. 7 via Argument)
+    sync_days = 30
+    if len(sys.argv) > 1:
+        try:
+            sync_days = max(1, min(60, int(sys.argv[1])))
+        except Exception:
+            pass
+
     today = datetime.date.today()
-    start_date = today - datetime.timedelta(days=30)
+    start_date = today - datetime.timedelta(days=sync_days)
 
     synced_metrics: List[Dict[str, Any]] = []
     synced_activities: List[Dict[str, Any]] = []
@@ -170,16 +192,44 @@ def main():
             except Exception:
                 pass
 
+            # Schlafdaten robust aus verschiedenen JSON-Formaten extrahieren
+            sleep_dto = sleep.get("dailySleepDTO") if isinstance(sleep, dict) else {}
+            if not isinstance(sleep_dto, dict):
+                sleep_dto = {}
+
+            # Score-Ermittlung
+            sleep_score_val = (
+                sleep_dto.get("sleepScores", {}).get("overall", {}).get("value")
+                or sleep_dto.get("sleepScores", {}).get("overall", {}).get("score")
+                or sleep_dto.get("sleepScore")
+                or (sleep.get("sleepScores", {}).get("overall", {}).get("value") if isinstance(sleep, dict) else None)
+                or (sleep.get("sleepScore") if isinstance(sleep, dict) else None)
+            )
+
+            # Schlafdauer & Schlafphasen
+            sleep_dur = (
+                sleep_dto.get("sleepTimeSeconds")
+                or (sleep.get("sleepTimeSeconds") if isinstance(sleep, dict) else None)
+            )
+            rem_dur = (
+                sleep_dto.get("remSleepSeconds")
+                or (sleep.get("remSleepSeconds") if isinstance(sleep, dict) else None)
+            )
+            deep_dur = (
+                sleep_dto.get("deepSleepSeconds")
+                or (sleep.get("deepSleepSeconds") if isinstance(sleep, dict) else None)
+            )
+
             metric = {
                 "date": date_str,
                 "resting_hr": stats.get("restingHeartRate") if isinstance(stats, dict) else None,
                 "hrv_last_night": hrv.get("hrvSummary", {}).get("lastNightAvg") if isinstance(hrv, dict) else None,
                 "hrv_7d_avg": hrv.get("hrvSummary", {}).get("baseline", {}).get("balancedLow") if isinstance(hrv, dict) else None,
                 "hrv_status": hrv.get("hrvSummary", {}).get("status", "balanced") if isinstance(hrv, dict) else "balanced",
-                "sleep_score": sleep.get("dailySleepDTO", {}).get("sleepScores", {}).get("overall", {}).get("value") if isinstance(sleep, dict) else None,
-                "sleep_duration_sec": sleep.get("dailySleepDTO", {}).get("sleepTimeSeconds") if isinstance(sleep, dict) else None,
-                "rem_sleep_sec": sleep.get("dailySleepDTO", {}).get("remSleepSeconds") if isinstance(sleep, dict) else None,
-                "deep_sleep_sec": sleep.get("dailySleepDTO", {}).get("deepSleepSeconds") if isinstance(sleep, dict) else None,
+                "sleep_score": sleep_score_val,
+                "sleep_duration_sec": sleep_dur,
+                "rem_sleep_sec": rem_dur,
+                "deep_sleep_sec": deep_dur,
                 "body_battery_max": max([b.get("charged", 0) for b in bb if isinstance(b, dict)], default=None) if isinstance(bb, list) and bb else None,
                 "body_battery_min": min([b.get("drained", 0) for b in bb if isinstance(b, dict)], default=None) if isinstance(bb, list) and bb else None,
                 "stress_avg": stats.get("averageStressLevel") if isinstance(stats, dict) else None,
@@ -297,6 +347,17 @@ def main():
         "metrics": synced_metrics,
         "activities": synced_activities,
     }
+
+    # Wenn weder Metriken noch Aktivitäten geholt werden konnten und Fehler im Log waren
+    if not synced_metrics and not synced_activities and not athlete_stats:
+        # Prüfen ob ein Authentifizierungsfehler vorlag
+        print(json.dumps({
+            "status": "error",
+            "message": "Keine Daten empfangen. Wahrscheinlich ist das Garmin-Token abgelaufen oder ungültig.",
+            "metrics_count": 0,
+            "activities_count": 0,
+        }))
+        sys.exit(0)
 
     print(json.dumps(result))
 

@@ -434,6 +434,9 @@ export async function saveSyncedData(params: {
 
   if (acts.length > 0) {
     for (const act of acts) {
+      if (!act.activity_id || act.activity_id === "None" || act.activity_id === "null") {
+        continue;
+      }
       const idx = globalStore.activities.findIndex((existing) => existing.activityId === act.activity_id);
       const actObj: MockActivity = {
         activityId: act.activity_id,
@@ -447,7 +450,7 @@ export async function saveSyncedData(params: {
         maxHr: act.max_hr ?? 0,
         avgPowerW: act.avg_power_w,
         normalizedPowerW: act.normalized_power_w,
-        avgCadence: act.avg_cadence,
+        avgCadence: act.avgCadence,
         avgPaceSecPerKm: act.avg_pace_sec_per_km,
         tss: act.tss ?? 0,
         intensityFactor: act.intensity_factor ?? 0,

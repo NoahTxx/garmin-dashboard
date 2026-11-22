@@ -6,15 +6,36 @@ import { spawn } from "child_process";
 import path from "path";
 import { saveSyncedData } from "@/lib/store";
 
-function runPythonScript(execName: string, scriptPath: string, token: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+function runPythonScript(
+  execName: string,
+  scriptPath: string,
+  token: string,
+  days: number = 30
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
+    let isSettled = false;
 
     try {
-      const pyProcess = spawn(execName, [scriptPath], {
+      const pyProcess = spawn(execName, [scriptPath, String(days)], {
         env: { ...process.env, GARMIN_TOKEN: token },
       });
+
+      // 60 Sekunden Timeout um Blockieren zu verhindern
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          try {
+            pyProcess.kill("SIGKILL");
+          } catch {}
+          resolve({
+            exitCode: 124,
+            stdout,
+            stderr: "Python Sync-Skript Zeitüberschreitung (Timeout nach 60s).",
+          });
+        }
+      }, 60000);
 
       pyProcess.stdout?.on("data", (data) => {
         stdout += data.toString();
@@ -25,24 +46,35 @@ function runPythonScript(execName: string, scriptPath: string, token: string): P
       });
 
       pyProcess.on("error", (err) => {
-        stderr += ` (Spawn ${execName} error: ${err.message})`;
-        resolve({ exitCode: 1, stdout, stderr });
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timer);
+          stderr += ` (Spawn ${execName} error: ${err.message})`;
+          resolve({ exitCode: 1, stdout, stderr });
+        }
       });
 
       pyProcess.on("close", (code) => {
-        resolve({ exitCode: code ?? 1, stdout, stderr });
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timer);
+          resolve({ exitCode: code ?? 1, stdout, stderr });
+        }
       });
     } catch (err) {
-      resolve({
-        exitCode: 1,
-        stdout,
-        stderr: err instanceof Error ? err.message : "Spawn failed",
-      });
+      if (!isSettled) {
+        isSettled = true;
+        resolve({
+          exitCode: 1,
+          stdout,
+          stderr: err instanceof Error ? err.message : "Spawn failed",
+        });
+      }
     }
   });
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const token = process.env.GARMIN_TOKEN;
   if (!token) {
     return NextResponse.json({
@@ -51,6 +83,16 @@ export async function POST() {
       isMock: true,
       syncedAt: new Date().toISOString(),
     });
+  }
+
+  let requestedDays = 30;
+  try {
+    const body = await req.json();
+    if (typeof body?.days === "number" && body.days > 0) {
+      requestedDays = Math.min(body.days, 60);
+    }
+  } catch {
+    // Leerer Body ist zulässig
   }
 
   const scriptPath = path.join(process.cwd(), "scripts", "sync_garmin.py");
@@ -64,7 +106,7 @@ export async function POST() {
     let result = { exitCode: 1, stdout: "", stderr: "" };
 
     for (const execName of candidates) {
-      result = await runPythonScript(execName, scriptPath, token);
+      result = await runPythonScript(execName, scriptPath, token, requestedDays);
       if (result.stdout.trim()) {
         try {
           const testParse = JSON.parse(result.stdout);
@@ -78,9 +120,14 @@ export async function POST() {
     }
 
     if (result.exitCode !== 0 || !result.stdout.trim()) {
+      // Fehler bereinigen (keine sensiblen Tokens im client anzeigen)
+      const cleanErr = (result.stderr.trim() || "")
+        .replace(/token=([^\s&]+)/gi, "token=***")
+        .slice(0, 300);
+
       return NextResponse.json({
         success: false,
-        message: result.stderr.trim() || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
+        message: cleanErr || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
         fallback: true,
       });
     }

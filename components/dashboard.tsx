@@ -264,7 +264,15 @@ export function DashboardApp() {
     }
   };
 
-  const latestMetric = metrics[metrics.length - 1] || null;
+  // Letzte Metrik mit echten Daten finden (oder die absolut neueste)
+  const latestMetric = useMemo(() => {
+    if (metrics.length === 0) return null;
+    // Falls heute noch keine Schlafdaten hat, suchen wir von hinten nach der neuesten mit Schlaf/Readiness Daten
+    const lastComplete = [...metrics].reverse().find(
+      (m) => (m.sleepScore !== null && m.sleepScore !== undefined) || (m.trainingReadiness !== null && m.trainingReadiness !== undefined)
+    );
+    return lastComplete || metrics[metrics.length - 1];
+  }, [metrics]);
   const todayWorkout = plannedWorkouts.find((w) => w.date === todayStr);
 
   // Calculate dynamic 30d HRV average and 7d averages from authentic Garmin history
@@ -651,7 +659,7 @@ export function DashboardApp() {
           {activeTab === "profile" && (
             <ProfileView
               profile={profile}
-              latestMetric={latestMetric}
+              latestMetric={latestMetric ?? undefined}
               onSyncGarmin={handleGarminSync}
               syncing={syncing}
               onUpdateProfile={handleUpdateProfile}

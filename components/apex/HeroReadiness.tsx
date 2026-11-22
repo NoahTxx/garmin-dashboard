@@ -68,7 +68,7 @@ export function HeroReadiness({
               </div>
             ) : (
               <div className="relative flex items-center justify-center">
-                <svg className="w-28 h-28 md:w-32 md:h-32 -rotate-90">
+                <svg className="w-28 h-28 md:w-32 md:h-32 -rotate-90" viewBox="0 0 120 120">
                   <circle
                     cx="60"
                     cy="60"
