@@ -6,16 +6,12 @@
   },
   "steps": {
     "install": {
-      "inputs": [
-        {
-          "source": ".",
-          "target": "."
-        }
-      ],
       "commands": [
+        { "src": ".", "dest": "." },
         "npm install",
-        "python3 -m pip install --no-cache-dir --break-system-packages -r requirements.txt",
-        "python3 -m pip install --no-cache-dir --break-system-packages --force-reinstall --no-deps garth-ng"
+        "python3 -m venv /app/.venv",
+        "/app/.venv/bin/pip install --no-cache-dir -r requirements.txt",
+        "/app/.venv/bin/pip install --no-cache-dir --force-reinstall --no-deps garth-ng"
       ]
     },
     "build": {
