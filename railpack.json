@@ -1,4 +1,17 @@
 {
-  "$schema": "https://schema.railpack.dev",
-  "provider": "node"
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "node": "24",
+    "python": "3.12"
+  },
+  "steps": {
+    "install": {
+      "commands": [
+        "npm ci",
+        "python3 -m venv /app/.venv",
+        "/app/.venv/bin/pip install --no-cache-dir -r requirements.txt",
+        "/app/.venv/bin/pip install --no-cache-dir --force-reinstall --no-deps garth-ng"
+      ]
+    }
+  }
 }

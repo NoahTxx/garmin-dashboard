@@ -23,29 +23,24 @@ function resolvePythonBinary(): { chosen: string | null; tested: string[]; sysPa
     }
   }
 
-  // 2. Dediziertes Nixpacks Virtualenv (/app/.venv/bin/python)
-  const venvPath = "/app/.venv/bin/python";
-  tested.push(venvPath);
-  if (fs.existsSync(venvPath)) {
-    return { chosen: venvPath, tested, sysPath };
-  }
-
-  // 3. Bekannte Nixpacks- und Systempfade
-  const standardPaths = [
-    "/root/.nix-profile/bin/python3",
-    "/nix/var/nix/profiles/default/bin/python3",
+  // 2. Dediziertes Virtualenv & Railpack/Mise Pfade
+  const candidatePaths = [
+    "/app/.venv/bin/python",
+    "/app/.venv/bin/python3",
+    "/mise/shims/python3",
+    "/mise/shims/python",
     "/usr/local/bin/python3",
     "/usr/bin/python3",
   ];
 
-  for (const p of standardPaths) {
+  for (const p of candidatePaths) {
     tested.push(p);
     if (fs.existsSync(p)) {
       return { chosen: p, tested, sysPath };
     }
   }
 
-  // 4. which python3 / which python
+  // 3. which python3 / which python
   for (const cmd of ["which python3", "which python"]) {
     try {
       const resolved = execSync(cmd, { stdio: ["pipe", "pipe", "ignore"] })
