@@ -2,10 +2,66 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { NextResponse } from "next/server";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 import { saveSyncedData } from "@/lib/store";
+
+function resolvePythonBinary(): { chosen: string | null; tested: string[]; sysPath: string } {
+  const tested: string[] = [];
+  const sysPath = process.env.PATH || "";
+
+  if (process.platform === "win32") {
+    return { chosen: "python", tested: ["python"], sysPath };
+  }
+
+  // 1. Explizite Umgebungsvariable
+  if (process.env.PYTHON_PATH) {
+    tested.push(`PYTHON_PATH (${process.env.PYTHON_PATH})`);
+    if (fs.existsSync(process.env.PYTHON_PATH)) {
+      return { chosen: process.env.PYTHON_PATH, tested, sysPath };
+    }
+  }
+
+  // 2. Dediziertes Nixpacks Virtualenv (/app/.venv/bin/python)
+  const venvPath = "/app/.venv/bin/python";
+  tested.push(venvPath);
+  if (fs.existsSync(venvPath)) {
+    return { chosen: venvPath, tested, sysPath };
+  }
+
+  // 3. Bekannte Nixpacks- und Systempfade
+  const standardPaths = [
+    "/root/.nix-profile/bin/python3",
+    "/nix/var/nix/profiles/default/bin/python3",
+    "/usr/local/bin/python3",
+    "/usr/bin/python3",
+  ];
+
+  for (const p of standardPaths) {
+    tested.push(p);
+    if (fs.existsSync(p)) {
+      return { chosen: p, tested, sysPath };
+    }
+  }
+
+  // 4. which python3 / which python
+  for (const cmd of ["which python3", "which python"]) {
+    try {
+      const resolved = execSync(cmd, { stdio: ["pipe", "pipe", "ignore"] })
+        .toString()
+        .trim();
+      tested.push(`${cmd} -> ${resolved}`);
+      if (resolved && fs.existsSync(resolved)) {
+        return { chosen: resolved, tested, sysPath };
+      }
+    } catch {
+      tested.push(`${cmd} (failed)`);
+    }
+  }
+
+  return { chosen: null, tested, sysPath };
+}
 
 function runPythonScript(
   execName: string,
@@ -99,52 +155,33 @@ export async function POST(req: Request) {
   const scriptPath = path.join(process.cwd(), "scripts", "sync_garmin.py");
 
   try {
-    // Robust executable resolution (Windows vs. Linux / Railway Nixpacks)
-    const candidates: string[] = [];
-    if (process.platform === "win32") {
-      candidates.push("python", "py", "python3");
-    } else {
-      // Bekannte Linux / Nixpacks Pfade zuerst prüfen
-      const nixPlaformPaths = [
-        "/root/.nix-profile/bin/python3",
-        "/nix/var/nix/profiles/default/bin/python3",
-        "/usr/local/bin/python3",
-        "/usr/bin/python3",
-      ];
-      for (const p of nixPlaformPaths) {
-        if (fs.existsSync(p)) {
-          candidates.push(p);
-        }
-      }
-      candidates.push("python3", "python");
+    const { chosen: pythonBinary, tested, sysPath } = resolvePythonBinary();
+
+    if (!pythonBinary) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Keine Python-Binary auf dem Host gefunden. Getestete Pfade: [${tested.join(", ")}]. System PATH: "${sysPath}".`,
+        },
+        { status: 500 }
+      );
     }
 
-    let result = { exitCode: 1, stdout: "", stderr: "" };
-
-    for (const execName of candidates) {
-      result = await runPythonScript(execName, scriptPath, token, requestedDays);
-      if (result.stdout.trim()) {
-        try {
-          const testParse = JSON.parse(result.stdout);
-          if (testParse.status === "success" || testParse.status === "error") {
-            break;
-          }
-        } catch {
-          // stdout wasn't valid sync json, continue to next candidate if available
-        }
-      }
-    }
+    const result = await runPythonScript(pythonBinary, scriptPath, token, requestedDays);
 
     if (result.exitCode !== 0 || !result.stdout.trim()) {
       // Fehler bereinigen (keine sensiblen Tokens im client anzeigen)
       const cleanErr = (result.stderr.trim() || "")
         .replace(/token=([^\s&]+)/gi, "token=***")
-        .slice(0, 300);
+        .slice(0, 400);
 
       return NextResponse.json(
         {
           success: false,
-          message: cleanErr || "Python Sync-Skript konnte nicht fehlerfrei ausgeführt werden. Bitte prüfe das Token-Format.",
+          message:
+            cleanErr ||
+            `Python Sync-Skript fehlgeschlagen (Exit: ${result.exitCode}, Exec: ${pythonBinary}).`,
+          debug: { pythonBinary, tested },
         },
         { status: 500 }
       );
