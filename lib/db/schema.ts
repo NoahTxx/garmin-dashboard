@@ -103,6 +103,8 @@ export const plannedWorkouts = pgTable(
     zwoXml: text("zwo_xml"),
     syncedToZwift: boolean("synced_to_zwift").default(false),
     status: text("status").default("planned").notNull(), // planned, completed, skipped
+    coachApprovalStatus: text("coach_approval_status").default("approved").notNull(), // approved, pending, rejected
+    coachSuggestedChanges: jsonb("coach_suggested_changes"), // { originalTitle, suggestedTitle, reason, ... }
   },
   (table) => [
     uniqueIndex("date_slot_unique").on(table.date, table.slotIndex),
